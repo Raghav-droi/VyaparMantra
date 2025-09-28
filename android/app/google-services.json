@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "22793096035",
+    "project_id": "vm-authentication-4d4ea",
+    "storage_bucket": "vm-authentication-4d4ea.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:22793096035:android:28ec1d1125def965a72156",
+        "android_client_info": {
+          "package_name": "com.vyaparmantra"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBMeejI7T--4NpS4O4t3bbJyF_r0ZpuecY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
