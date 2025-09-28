@@ -1,107 +1,234 @@
-import { ImageWithFallback } from "./components/figma/ImageWithFallback";
-import { Button } from "./components/ui/button";
+import React from "react";
+import { View, Text, StyleSheet, ScrollView, Image } from "react-native";
+import LinearGradient from "react-native-linear-gradient";
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Card } from "./components/ui/card";
-import { Warehouse, ShoppingBag, UserPlus } from "lucide-react";
+import { Button } from "./components/ui/button";
 
-export default function App() {
+export default function Home_Page_Login() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-400 via-amber-400 to-yellow-300 p-6">
-      <div className="max-w-sm mx-auto space-y-8">
-        {/* Header with Logo */}
-        <div className="text-center pt-8 space-y-6">
-          <div className="relative">
-            <div className="w-24 h-24 mx-auto rounded-full bg-white/20 backdrop-blur-sm border border-white/30 flex items-center justify-center shadow-xl">
-              <div className="w-20 h-20 rounded-full overflow-hidden bg-white">
-                <ImageWithFallback
-                  src="https://images.unsplash.com/photo-1754765542024-c1320f23b75a?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxkZWxpdmVyeSUyMHBlcnNvbiUyMG1vdG9yY3ljbGUlMjBiaWtlJTIwZ29vZHMlMjBjb3VyaWVyfGVufDF8fHx8MTc1ODI2NjQyMHww&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral"
-                  alt="Delivery person on motorcycle"
-                  className="w-full h-full object-cover"
-                />
-              </div>
-            </div>
-          </div>
+    <LinearGradient
+      colors={["#FF8C00", "#FFB347", "#FFD580"]}
+      style={styles.gradient}
+    >
+      <ScrollView contentContainerStyle={styles.scrollContainer}>
+        <View style={styles.container}>
+          {/* Logo */}
+          <View style={styles.logoContainer}>
+            <Image
+              source={{
+                uri: "https://images.unsplash.com/photo-1754765542024-c1320f23b75a?auto=format&fit=crop&w=100&q=80",
+              }}
+              style={styles.logo}
+            />
+          </View>
 
-          <div className="space-y-2">
-            <h1 className="text-3xl text-white drop-shadow-lg tracking-wide">
-              Vyapar Mantra
-            </h1>
-            <p className="text-white/90 drop-shadow-md">
-              Your Business we deliver
-            </p>
-            <div className="w-20 h-0.5 bg-white/60 rounded-full mx-auto"></div>
-          </div>
-        </div>
+          {/* Header */}
+          <Text style={styles.title}>Vyapar Mantra</Text>
+          <Text style={styles.subtitle}>Your Business we deliver</Text>
+          <View style={styles.divider} />
 
-        {/* Welcome Message */}
-        <div className="text-center">
-          <h2 className="text-xl text-white drop-shadow-md mb-2">
-            Welcome Back!
-          </h2>
-          <p className="text-white/80 drop-shadow-sm">
-            Choose your login type to continue
-          </p>
-        </div>
+          {/* Welcome Message */}
+          <View style={styles.welcomeSection}>
+            <Text style={styles.welcomeTitle}>Welcome Back!</Text>
+            <Text style={styles.welcomeSubtitle}>Choose your login type to continue</Text>
+          </View>
 
-        {/* Login Options */}
-        <div className="space-y-4">
-          <Card className="bg-white/95 backdrop-blur-sm border-white/30 shadow-xl">
-            <div className="p-6 space-y-4">
-              <h3 className="text-center text-gray-800 mb-4">
-                Login as
-              </h3>
-
-              <Button
-                className="w-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white shadow-lg transition-all duration-200 transform hover:scale-105"
-                size="lg"
-              >
-                <Warehouse className="mr-2 h-5 w-5" />
-                Wholesaler Login
-              </Button>
-
-              <Button
-                className="w-full bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600 text-white shadow-lg transition-all duration-200 transform hover:scale-105"
-                size="lg"
-              >
-                <ShoppingBag className="mr-2 h-5 w-5" />
-                Retailer Login
-              </Button>
-            </div>
+          {/* Login Options */}
+          <Card style={styles.card}>
+            <Text style={styles.cardTitle}>Login as</Text>
+            <Button style={styles.wholesalerButton}>
+              <Icon name="warehouse" size={22} color="#fff" />
+              <Text style={styles.buttonText}> Wholesaler Login</Text>
+            </Button>
+            <Button style={styles.retailerButton}>
+              <Icon name="shopping" size={22} color="#fff" />
+              <Text style={styles.buttonText}> Retailer Login</Text>
+            </Button>
           </Card>
 
           {/* Register Section */}
-          <Card className="bg-white/90 backdrop-blur-sm border-white/30 shadow-xl">
-            <div className="p-6 text-center space-y-4">
-              <h3 className="text-gray-800">
-                New to Vyapar Mantra?
-              </h3>
-              <Button
-                variant="outline"
-                className="w-full border-2 border-orange-400 text-orange-600 hover:bg-orange-50 shadow-md transition-all duration-200 transform hover:scale-105"
-                size="lg"
-              >
-                <UserPlus className="mr-2 h-5 w-5" />
-                Register Your Business
-              </Button>
-              <p className="text-sm text-gray-600">
-                Join thousands of businesses growing with us
-              </p>
-            </div>
+          <Card style={styles.card}>
+            <Text style={styles.cardTitle}>New to Vyapar Mantra?</Text>
+            <Button style={styles.registerButton}>
+              <Icon name="account-plus" size={22} color="#fff" />
+              <Text style={styles.registerButtonText}> Register Your Business</Text>
+            </Button>
+            <Text style={styles.registerInfo}>
+              Join thousands of businesses growing with us
+            </Text>
           </Card>
-        </div>
 
-        {/* Footer */}
-        <div className="text-center pt-4">
-          <p className="text-white/70 text-sm drop-shadow-sm">
-            Connecting businesses, delivering success
-          </p>
-        </div>
-      </div>
-
-      {/* Background decoration */}
-      <div className="absolute top-10 left-10 w-20 h-20 bg-white/10 rounded-full blur-xl"></div>
-      <div className="absolute bottom-20 right-8 w-16 h-16 bg-white/10 rounded-full blur-xl"></div>
-      <div className="absolute top-1/3 right-12 w-12 h-12 bg-white/10 rounded-full blur-xl"></div>
-      <div className="absolute bottom-1/3 left-8 w-14 h-14 bg-white/10 rounded-full blur-xl"></div>
-    </div>
+          {/* Footer */}
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>
+              Connecting businesses, delivering success
+            </Text>
+          </View>
+        </View>
+      </ScrollView>
+    </LinearGradient>
   );
 }
+
+const styles = StyleSheet.create({
+  gradient: {
+    flex: 1,
+  },
+  scrollContainer: {
+    flexGrow: 1,
+  },
+  container: {
+    flex: 1,
+    padding: 24,
+    alignItems: "center",
+  },
+  logoContainer: {
+    marginTop: 40,
+    marginBottom: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff",
+    borderRadius: 60,
+    padding: 10,
+    shadowColor: "#000",
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  logo: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: "bold",
+    color: "#fff",
+    marginBottom: 2,
+    textAlign: "center",
+    textShadowColor: "#FFA500",
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 6,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: "#fff",
+    marginBottom: 8,
+    textAlign: "center",
+    textShadowColor: "#FFA500",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  divider: {
+    width: 60,
+    height: 3,
+    backgroundColor: "rgba(255,255,255,0.6)",
+    borderRadius: 2,
+    marginTop: 6,
+    marginBottom: 6,
+  },
+  welcomeSection: {
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  welcomeTitle: {
+    fontSize: 20,
+    color: "#fff",
+    fontWeight: "600",
+    marginBottom: 4,
+    textAlign: "center",
+    textShadowColor: "#FFA500",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  welcomeSubtitle: {
+    fontSize: 14,
+    color: "#fff",
+    marginBottom: 8,
+    textAlign: "center",
+    textShadowColor: "#FFA500",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 20,
+    marginVertical: 8,
+    width: "100%",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  cardTitle: {
+    fontSize: 16,
+    color: "#333",
+    fontWeight: "600",
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  wholesalerButton: {
+    backgroundColor: "#E53935",
+    width: "100%",
+    marginBottom: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 14,
+    borderRadius: 8,
+    elevation: 2,
+  },
+  retailerButton: {
+    backgroundColor: "#3949AB",
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 14,
+    borderRadius: 8,
+    elevation: 2,
+  },
+  buttonText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 16,
+    marginLeft: 8,
+  },
+  registerButton: {
+    backgroundColor: "#1976D2",
+    borderColor: "#1976D2",
+    borderWidth: 2,
+    width: "100%",
+    marginBottom: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 14,
+    borderRadius: 8,
+    elevation: 2,
+  },
+  registerButtonText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 16,
+    marginLeft: 8,
+  },
+  registerInfo: {
+    fontSize: 13,
+    color: "#888",
+    marginTop: 4,
+    textAlign: "center",
+  },
+  footer: {
+    marginTop: 24,
+    alignItems: "center",
+  },
+  footerText: {
+    color: "#fff",
+    fontSize: 13,
+    textAlign: "center",
+  },
+});
