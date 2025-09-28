@@ -37,23 +37,43 @@ export default function Home_Page_Login() {
           {/* Login Options */}
           <Card style={styles.card}>
             <Text style={styles.cardTitle}>Login as</Text>
-            <Button style={styles.wholesalerButton}>
-              <Icon name="warehouse" size={22} color="#fff" />
-              <Text style={styles.buttonText}> Wholesaler Login</Text>
-            </Button>
-            <Button style={styles.retailerButton}>
-              <Icon name="shopping" size={22} color="#fff" />
-              <Text style={styles.buttonText}> Retailer Login</Text>
-            </Button>
+            <Button
+  style={styles.wholesalerButton}
+  onPress={() => {
+    // Add wholesaler login logic here
+    console.log("Wholesaler Login pressed");
+  }}
+>
+  <Icon name="warehouse" size={22} color="#fff" />
+  <Text style={styles.buttonText}> Wholesaler Login</Text>
+</Button>
+
+<Button
+  style={styles.retailerButton}
+  onPress={() => {
+    // Add retailer login logic here
+    console.log("Retailer Login pressed");
+  }}
+>
+  <Icon name="shopping" size={22} color="#fff" />
+  <Text style={styles.buttonText}> Retailer Login</Text>
+</Button>
+
           </Card>
 
           {/* Register Section */}
           <Card style={styles.card}>
             <Text style={styles.cardTitle}>New to Vyapar Mantra?</Text>
-            <Button style={styles.registerButton}>
-              <Icon name="account-plus" size={22} color="#fff" />
-              <Text style={styles.registerButtonText}> Register Your Business</Text>
-            </Button>
+            <Button
+  style={styles.registerButton}
+  onPress={() => {
+    // Add registration logic here
+    console.log("Register button pressed");
+  }}
+>
+  <Icon name="account-plus" size={22} color="#fff" />
+  <Text style={styles.registerButtonText}> Register Your Business</Text>
+</Button>
             <Text style={styles.registerInfo}>
               Join thousands of businesses growing with us
             </Text>
