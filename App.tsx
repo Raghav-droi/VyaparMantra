@@ -1,19 +1,26 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text } from 'react-native';
+import { NavigationContainer } from '@react-navigation/native';
+import { createStackNavigator } from '@react-navigation/stack';
 import SplashScreen from './SplashScreen';
 import Home_Page_Login from './Home_Page_Login';
-import { TruckElectric } from 'lucide-react';
+import RegistrationForm from './RegistrationForm';
 
-const MainApp = () => {
-  return <Home_Page_Login />;
-};
+const Stack = createStackNavigator();
+
+const MainApp = () => (
+  <NavigationContainer>
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Home" component={Home_Page_Login} />
+      <Stack.Screen name="RegistrationForm" component={RegistrationForm} />
+    </Stack.Navigator>
+  </NavigationContainer>
+);
 
 const App = () => {
   const [loading, setLoading] = useState(true);
-  
 
   useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 3000); // Show splash 3 seconds
+    const timer = setTimeout(() => setLoading(false), 3000);
     return () => clearTimeout(timer);
   }, []);
 

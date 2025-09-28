@@ -5,7 +5,14 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Card } from "./components/ui/card";
 import { Button } from "./components/ui/button";
 
-export default function Home_Page_Login() {
+
+import type { StackNavigationProp } from '@react-navigation/stack';
+
+type HomePageLoginProps = {
+  navigation: StackNavigationProp<any>;
+};
+
+export default function Home_Page_Login({ navigation }: HomePageLoginProps) {
   return (
     <LinearGradient
       colors={["#FF8C00", "#FFB347", "#FFD580"]}
@@ -65,15 +72,12 @@ export default function Home_Page_Login() {
           <Card style={styles.card}>
             <Text style={styles.cardTitle}>New to Vyapar Mantra?</Text>
             <Button
-  style={styles.registerButton}
-  onPress={() => {
-    // Add registration logic here
-    console.log("Register button pressed");
-  }}
->
-  <Icon name="account-plus" size={22} color="#fff" />
-  <Text style={styles.registerButtonText}> Register Your Business</Text>
-</Button>
+              style={styles.registerButton}
+              onPress={() => navigation.navigate('RegistrationForm')}
+            >
+              <Icon name="account-plus" size={22} color="#fff" />
+              <Text style={styles.registerButtonText}> Register Your Business</Text>
+            </Button>
             <Text style={styles.registerInfo}>
               Join thousands of businesses growing with us
             </Text>
