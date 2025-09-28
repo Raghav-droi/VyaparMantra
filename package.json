@@ -10,12 +10,16 @@
     "test": "jest"
   },
   "dependencies": {
+    "@radix-ui/react-slot": "^1.2.3",
     "@react-native/new-app-screen": "0.81.4",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "lucide-react": "^0.544.0",
     "react": "19.1.0",
     "react-native": "0.81.4",
     "react-native-linear-gradient": "^2.8.3",
-    "react-native-safe-area-context": "^5.5.2"
+    "react-native-safe-area-context": "^5.5.2",
+    "tailwind-merge": "^3.3.1"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
