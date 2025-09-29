@@ -7,11 +7,24 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
+  Modal,
+  Platform,
+  KeyboardAvoidingView,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Checkbox from '@react-native-community/checkbox';
 import DropDownPicker from 'react-native-dropdown-picker';
 import Geolocation from '@react-native-community/geolocation';
+import auth, { getAuth, signInWithPhoneNumber } from '@react-native-firebase/auth';
+import firestore from '@react-native-firebase/firestore';
+import { request, PERMISSIONS, RESULTS } from 'react-native-permissions';
+import BusinessTypeSelector from './components/BusinessTypeSelector';
+import LocationField from './components/LocationField';
+import OtpModal from './components/OtpModal';
+import WholesalerFields from './components/WholesalerFields';
+import FormInput from './components/FormInput';
 
 interface FormData {
   userType: 'wholesaler' | 'retail';
@@ -26,10 +39,10 @@ interface FormData {
   currentAccountDetails: string;
   bankName: string;
   ifscCode: string;
-  termsAccepted: boolean | string;
+  termsAccepted: boolean;
 }
 
-export default function RegistrationForm() {
+export default function RegistrationForm({ navigation }: any) {
   const [formData, setFormData] = useState<FormData>({
     userType: 'retail',
     businessOwnerName: '',
@@ -46,8 +59,13 @@ export default function RegistrationForm() {
     termsAccepted: false,
   });
 
-  const [errors, setErrors] = useState<Partial<FormData>>({});
-  const [otpSent, setOtpSent] = useState(false);
+  const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  const [confirmation, setConfirmation] = useState<any>(null);
+  const [isOtpVerified, setIsOtpVerified] = useState(false);
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [locationLoading, setLocationLoading] = useState(false); // <-- Add this line
 
   const [openIdProofType, setOpenIdProofType] = useState(false);
   const [idProofTypeItems, setIdProofTypeItems] = useState([
@@ -57,6 +75,7 @@ export default function RegistrationForm() {
     { label: 'Driving License', value: 'driving_license' },
     { label: 'Voter ID', value: 'voter_id' },
   ]);
+  const [idProofTypeValue, setIdProofTypeValue] = useState(formData.idProofType);
 
   const handleInputChange = (field: keyof FormData, value: any) => {
     setFormData(prev => ({
@@ -64,17 +83,23 @@ export default function RegistrationForm() {
       [field]: value
     }));
     if (errors[field]) {
-      setErrors(prev => ({
-        ...prev,
-        [field]: undefined
-      }));
+      setErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
     }
   };
 
+  React.useEffect(() => {
+    handleInputChange('idProofType', idProofTypeValue);
+    // eslint-disable-next-line
+  }, [idProofTypeValue]);
+
   const validateForm = () => {
-    const newErrors: Partial<FormData> = {};
+    const newErrors: { [key: string]: string } = {};
     if (!formData.businessOwnerName.trim()) newErrors.businessOwnerName = 'Required';
-    if (!formData.idProofType.trim()) newErrors.idProofType = 'Required';
+    if (!formData.idProofType || !formData.idProofType.trim()) newErrors.idProofType = 'Required';
     if (!formData.idProof.trim()) newErrors.idProof = 'Required';
     if (!formData.tradeName.trim()) newErrors.tradeName = 'Required';
     if (!formData.address.trim()) newErrors.address = 'Required';
@@ -95,14 +120,15 @@ export default function RegistrationForm() {
   };
 
   const isFormValidAndReady = () => {
+    const idProofType = typeof formData.idProofType === 'string' ? formData.idProofType : '';
     const isBasicValid = formData.businessOwnerName.trim() !== '' &&
-      formData.idProofType.trim() !== '' &&
+      idProofType.trim() !== '' &&
       formData.idProof.trim() !== '' &&
       formData.tradeName.trim() !== '' &&
       formData.address.trim() !== '' &&
       /^\d{10}$/.test(formData.phoneNumber) &&
       formData.termsAccepted &&
-      otpSent;
+      isOtpVerified;
 
     if (formData.userType === 'wholesaler') {
       return isBasicValid &&
@@ -114,229 +140,340 @@ export default function RegistrationForm() {
     return isBasicValid;
   };
 
-  const handleSendOTP = () => {
-    if (formData.phoneNumber && /^\d{10}$/.test(formData.phoneNumber)) {
-      setOtpSent(true);
-      Alert.alert('OTP Sent', `OTP sent to ${formData.phoneNumber}`);
-    } else {
+  const handleSendOTP = async () => {
+    if (!formData.phoneNumber || !/^\d{10}$/.test(formData.phoneNumber)) {
       setErrors(prev => ({ ...prev, phoneNumber: 'Enter valid 10-digit phone' }));
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const phoneWithCountryCode = `+91${formData.phoneNumber}`;
+      const authInstance = getAuth();
+      const confirmationResult = await signInWithPhoneNumber(authInstance, phoneWithCountryCode);
+      setConfirmation(confirmationResult);
+      setShowOtpModal(true); // <-- This shows the OTP modal
+      Alert.alert('OTP Sent', `OTP sent to ${formData.phoneNumber}`);
+    } catch (error) {
+      console.error(error);
+      Alert.alert('Error', 'Failed to send OTP. Please try again.');
+      setShowOtpModal(true); // <-- Optionally show modal for manual entry/debug
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleFetchLocation = () => {
-    Geolocation.getCurrentPosition(
-      (position) => {
-        const { latitude, longitude } = position.coords;
-        handleInputChange('location', `${latitude}, ${longitude}`);
-      },
-      (error) => {
-        Alert.alert('Location Error', 'Unable to fetch location.');
-      }
-    );
+  const handleVerifyOTP = async () => {
+    if (!confirmation) {
+      Alert.alert('Error', 'No OTP confirmation found. Please request OTP again.');
+      return;
+    }
+    if (!otp || otp.length !== 6) {
+      Alert.alert('Error', 'Please enter valid 6-digit OTP');
+      return;
+    }
+    try {
+      setLoading(true);
+      await confirmation.confirm(otp);
+      setIsOtpVerified(true);
+      setShowOtpModal(false);
+      Alert.alert('Success', 'Phone number verified successfully!');
+    } catch (error) {
+      console.error(error);
+      Alert.alert('Error', 'Invalid OTP. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleSubmit = () => {
-    if (validateForm()) {
-      Alert.alert('Success', "Registration submitted successfully!");
-      console.log(formData);
-    } else {
+
+  // Helper function to convert coordinates to address using Google Geocoding API
+  const getLocationName = async (latitude: number, longitude: number) => {
+    try {
+      const apiKey = 'AIzaSyBwvBIp9KarqwiBMQMTYdYCXcFZJpUDO6Y';
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`
+      );
+      const data = await response.json();
+      console.log('Geocoding API response:', data); // <-- Add this line
+      if (data.status === 'OK' && data.results.length > 0) {
+        return data.results[0].formatted_address;
+      }
+      return `${latitude}, ${longitude}`;
+    } catch (error) {
+      console.error('Geocoding error:', error);
+      return `${latitude}, ${longitude}`;
+    }
+  };
+
+  const handleFetchLocation = async () => {
+    setLocationLoading(true);
+    try {
+      let permissionResult;
+      if (Platform.OS === 'ios') {
+        permissionResult = await request(PERMISSIONS.IOS.LOCATION_WHEN_IN_USE);
+      } else {
+        permissionResult = await request(PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION);
+      }
+
+      if (permissionResult === RESULTS.GRANTED) {
+        Geolocation.getCurrentPosition(
+          async (position) => {
+            const { latitude, longitude } = position.coords;
+            const locationName = await getLocationName(latitude, longitude);
+            handleInputChange('location', locationName);
+            setLocationLoading(false);
+          },
+          (error) => {
+            setLocationLoading(false);
+            Alert.alert('Location Error', `Unable to fetch location: ${error.message}`);
+            console.error('Location error:', error);
+          },
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+        );
+      } else {
+        setLocationLoading(false);
+        Alert.alert('Permission Denied', 'Location permission is required.');
+      }
+    } catch (error) {
+      setLocationLoading(false);
+      Alert.alert('Error', 'Failed to request location permission.');
+      console.error(error);
+    }
+  };
+
+  const validateIFSC = async (ifscCode: string) => {
+    try {
+      const response = await fetch(`https://ifsc.razorpay.com/${ifscCode}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.BANK) {
+          return { valid: true, bank: data.BANK, branch: data.BRANCH };
+        }
+      }
+      return { valid: false };
+    } catch (error) {
+      console.error('IFSC validation error:', error);
+      return { valid: false };
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!validateForm()) {
       Alert.alert('Validation Error', 'Please fix errors before submitting.');
+      return;
+    }
+
+    if (!isOtpVerified) {
+      Alert.alert('Error', 'Please verify your phone number with OTP first.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      // Validate IFSC code for wholesalers
+      if (formData.userType === 'wholesaler' && formData.ifscCode) {
+        const ifscValidation = await validateIFSC(formData.ifscCode);
+        if (!ifscValidation.valid) {
+          Alert.alert('Error', 'Invalid IFSC Code. Please check and try again.');
+          setLoading(false);
+          return;
+        }
+        // Update bank name with validated bank name
+        setFormData(prev => ({
+          ...prev,
+          bankName: ifscValidation.bank || prev.bankName
+        }));
+      }
+
+      // Save user data to Firestore
+      const userId = auth().currentUser?.uid;
+      if (!userId) {
+        Alert.alert('Error', 'Authentication error. Please try again.');
+        setLoading(false);
+        return;
+      }
+
+      const userData = {
+        ...formData,
+        userId,
+        phoneVerified: true,
+        createdAt: firestore.FieldValue.serverTimestamp(),
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+        status: 'active'
+      };
+
+      await firestore().collection('users').doc(userId).set(userData);
+
+      Alert.alert(
+        'Registration Successful!', 
+        'Your business has been registered successfully.',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              // Navigate to appropriate profile screen based on user type
+              const profileScreen = formData.userType === 'retail' ? 'RetailerProfile' : 'WholesalerProfile';
+              navigation.replace(profileScreen);
+            }
+          }
+        ]
+      );
+
+    } catch (error) {
+      console.error('Registration error:', error);
+      Alert.alert('Error', 'Registration failed. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <LinearGradient
-      colors={["#FF8C00", "#FFB347", "#FFD580"]}
-      style={styles.gradient}
-    >
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-        <View style={styles.formCard}>
-          <Text style={styles.title}>Business Registration</Text>
+    <LinearGradient colors={["#FF8C00", "#FFB347", "#FFD580"]} style={styles.gradient}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+      >
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
+            <View style={styles.formCard}>
+              <Text style={styles.title}>Business Registration</Text>
 
-          {/* User Type */}
-          <Text style={styles.label}>Business Type *</Text>
-          <View style={styles.radioGroup}>
-            <TouchableOpacity
-              style={styles.radioButton}
-              onPress={() => handleInputChange('userType', 'retail')}
-            >
-              <View style={[styles.radioCircle, formData.userType === 'retail' && styles.selectedRadio]} />
-              <Text style={styles.radioText}>Retail Business</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.radioButton}
-              onPress={() => handleInputChange('userType', 'wholesaler')}
-            >
-              <View style={[styles.radioCircle, formData.userType === 'wholesaler' && styles.selectedRadio]} />
-              <Text style={styles.radioText}>Wholesaler</Text>
-            </TouchableOpacity>
-          </View>
+              {/* Business Type */}
+              <BusinessTypeSelector value={formData.userType} onChange={(val: 'wholesaler' | 'retail') => handleInputChange('userType', val)} />
 
-          {/* Owner Name */}
-          <Text style={styles.label}>Business Owner Name *</Text>
-          <TextInput
-            style={[styles.input, errors.businessOwnerName && styles.errorInput]}
-            onChangeText={text => handleInputChange('businessOwnerName', text)}
-            value={formData.businessOwnerName}
-            placeholder="Enter owner name"
-            placeholderTextColor="#aaa"
-          />
-          {!!errors.businessOwnerName && <Text style={styles.errorText}>{errors.businessOwnerName}</Text>}
-
-          {/* ID Proof Type */}
-          <Text style={styles.label}>ID Proof Type *</Text>
-          <DropDownPicker
-            open={openIdProofType}
-            value={formData.idProofType}
-            items={idProofTypeItems}
-            setOpen={setOpenIdProofType}
-            setValue={value => handleInputChange('idProofType', value)}
-            setItems={setIdProofTypeItems}
-            style={styles.dropdown}
-            containerStyle={{ marginBottom: 10 }}
-            placeholder="Select ID Proof"
-            placeholderStyle={{ color: "#aaa" }}
-          />
-          {!!errors.idProofType && <Text style={styles.errorText}>{errors.idProofType}</Text>}
-
-          {/* ID Proof Number */}
-          <Text style={styles.label}>ID Proof Number *</Text>
-          <TextInput
-            style={[styles.input, errors.idProof && styles.errorInput]}
-            onChangeText={text => handleInputChange('idProof', text)}
-            value={formData.idProof}
-            placeholder="Enter ID proof number"
-            placeholderTextColor="#aaa"
-          />
-          {!!errors.idProof && <Text style={styles.errorText}>{errors.idProof}</Text>}
-
-          {/* Trade Name */}
-          <Text style={styles.label}>Trade Name *</Text>
-          <TextInput
-            style={[styles.input, errors.tradeName && styles.errorInput]}
-            onChangeText={text => handleInputChange('tradeName', text)}
-            value={formData.tradeName}
-            placeholder="Enter trade name"
-            placeholderTextColor="#aaa"
-          />
-          {!!errors.tradeName && <Text style={styles.errorText}>{errors.tradeName}</Text>}
-
-          {/* Address */}
-          <Text style={styles.label}>Address *</Text>
-          <TextInput
-            style={[styles.input, errors.address && styles.errorInput]}
-            onChangeText={text => handleInputChange('address', text)}
-            value={formData.address}
-            placeholder="Enter address"
-            placeholderTextColor="#aaa"
-          />
-          {!!errors.address && <Text style={styles.errorText}>{errors.address}</Text>}
-
-          {/* Location */}
-          <View style={styles.locationRow}>
-            <TextInput
-              style={[styles.input, { flex: 1 }]}
-              value={formData.location}
-              placeholder="Location (lat, long)"
-              placeholderTextColor="#aaa"
-              editable={false}
-            />
-            <TouchableOpacity
-              style={styles.locationButton}
-              onPress={handleFetchLocation}
-            >
-              <Text style={styles.locationButtonText}>Fetch</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Phone Number (OTP) */}
-          <Text style={styles.label}>Phone Number (OTP) *</Text>
-          <View style={styles.locationRow}>
-            <TextInput
-              style={[styles.input, errors.phoneNumber && styles.errorInput, { flex: 1 }]}
-              onChangeText={(text) => handleInputChange('phoneNumber', text)}
-              value={formData.phoneNumber}
-              placeholder="Enter 10-digit phone number"
-              keyboardType="numeric"
-              maxLength={10}
-              placeholderTextColor="#aaa"
-            />
-            <TouchableOpacity
-              style={[styles.locationButton, otpSent && { backgroundColor: '#aaa' }]}
-              onPress={handleSendOTP}
-              disabled={otpSent}
-            >
-              <Text style={styles.locationButtonText}>{otpSent ? 'OTP Sent' : 'Send OTP'}</Text>
-            </TouchableOpacity>
-          </View>
-          {!!errors.phoneNumber && <Text style={styles.errorText}>{errors.phoneNumber}</Text>}
-
-          {/* Wholesaler Fields */}
-          {formData.userType === 'wholesaler' && (
-            <>
-              <Text style={styles.label}>GSTIN Number *</Text>
-              <TextInput
-                style={[styles.input, errors.gstinNumber && styles.errorInput]}
-                onChangeText={text => handleInputChange('gstinNumber', text)}
-                value={formData.gstinNumber}
-                placeholder="Enter GSTIN number"
-                placeholderTextColor="#aaa"
+              {/* Owner Name */}
+              <FormInput
+                label="Business Owner Name *"
+                value={formData.businessOwnerName}
+                onChangeText={(text: string) => handleInputChange('businessOwnerName', text)}
+                placeholder="Enter owner name"
+                error={errors.businessOwnerName}
               />
-              {!!errors.gstinNumber && <Text style={styles.errorText}>{errors.gstinNumber}</Text>}
 
-              <Text style={styles.label}>Current Account Details *</Text>
-              <TextInput
-                style={[styles.input, errors.currentAccountDetails && styles.errorInput]}
-                onChangeText={text => handleInputChange('currentAccountDetails', text)}
-                value={formData.currentAccountDetails}
-                placeholder="Enter account details"
-                placeholderTextColor="#aaa"
+              {/* ID Proof Type */}
+              <Text style={styles.label}>ID Proof Type *</Text>
+              <DropDownPicker
+                open={openIdProofType}
+                value={idProofTypeValue}
+                items={idProofTypeItems}
+                setOpen={setOpenIdProofType}
+                setValue={setIdProofTypeValue}
+                setItems={setIdProofTypeItems}
+                style={styles.dropdown}
+                containerStyle={{ marginBottom: 10 }}
+                placeholder="Select ID Proof"
+                placeholderStyle={{ color: "#aaa" }}
+                listMode="SCROLLVIEW"
               />
-              {!!errors.currentAccountDetails && <Text style={styles.errorText}>{errors.currentAccountDetails}</Text>}
+              {!!errors.idProofType && <Text style={styles.errorText}>{errors.idProofType}</Text>}
 
-              <Text style={styles.label}>Bank Name *</Text>
-              <TextInput
-                style={[styles.input, errors.bankName && styles.errorInput]}
-                onChangeText={text => handleInputChange('bankName', text)}
-                value={formData.bankName}
-                placeholder="Enter bank name"
-                placeholderTextColor="#aaa"
+              {/* ID Proof Number */}
+              <FormInput
+                label="ID Proof Number *"
+                value={formData.idProof}
+                onChangeText={(text: string) => handleInputChange('idProof', text)}
+                placeholder="Enter ID proof number"
+                error={errors.idProof}
               />
-              {!!errors.bankName && <Text style={styles.errorText}>{errors.bankName}</Text>}
 
-              <Text style={styles.label}>IFSC Code *</Text>
-              <TextInput
-                style={[styles.input, errors.ifscCode && styles.errorInput]}
-                onChangeText={text => handleInputChange('ifscCode', text)}
-                value={formData.ifscCode}
-                placeholder="Enter IFSC code"
-                placeholderTextColor="#aaa"
+              {/* Trade Name */}
+              <FormInput
+                label="Trade Name *"
+                value={formData.tradeName}
+                onChangeText={(text: string) => handleInputChange('tradeName', text)}
+                placeholder="Enter trade name"
+                error={errors.tradeName}
               />
-              {!!errors.ifscCode && <Text style={styles.errorText}>{errors.ifscCode}</Text>}
-            </>
-          )}
 
-          {/* Terms Acceptance */}
-          <View style={styles.checkboxRow}>
-            <Checkbox
-              value={!!formData.termsAccepted}
-              onValueChange={(val) => handleInputChange('termsAccepted', val)}
-              tintColors={{ true: '#FF8C00', false: '#aaa' }}
-            />
-            <Text style={styles.checkboxText}>I accept the terms and conditions *</Text>
-          </View>
-          {!!errors.termsAccepted && <Text style={styles.errorText}>{errors.termsAccepted}</Text>}
+              {/* Address */}
+              <FormInput
+                label="Address *"
+                value={formData.address}
+                onChangeText={(text: string) => handleInputChange('address', text)}
+                placeholder="Enter address"
+                error={errors.address}
+              />
 
-          {/* Submit Button */}
-          <TouchableOpacity
-            style={[styles.submitButton, !isFormValidAndReady() && styles.disabledButton]}
-            onPress={handleSubmit}
-            disabled={!isFormValidAndReady()}
-          >
-            <Text style={styles.submitButtonText}>Register Business</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
+              {/* Location */}
+              <LocationField
+                value={formData.location}
+                loading={locationLoading}
+                onFetch={handleFetchLocation}
+              />
+
+              {/* Phone Number (OTP) */}
+              <Text style={styles.label}>Phone Number (OTP) *</Text>
+              <View style={styles.locationRow}>
+                <TextInput
+                  style={[styles.input, errors.phoneNumber && styles.errorInput, { flex: 1 }]}
+                  onChangeText={(text) => handleInputChange('phoneNumber', text)}
+                  value={formData.phoneNumber}
+                  placeholder="Enter 10-digit phone number"
+                  keyboardType="numeric"
+                  maxLength={10}
+                  placeholderTextColor="#aaa"
+                  editable={!isOtpVerified}
+                />
+                <TouchableOpacity
+                  style={[styles.locationButton, (isOtpVerified || loading) && { backgroundColor: '#aaa' }]}
+                  onPress={handleSendOTP}
+                  disabled={isOtpVerified || loading}
+                >
+                  <Text style={styles.locationButtonText}>
+                    {isOtpVerified ? 'Verified' : loading ? 'Sending...' : 'Send OTP'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              {!!errors.phoneNumber && <Text style={styles.errorText}>{errors.phoneNumber}</Text>}
+
+              {/* Wholesaler Fields */}
+              {formData.userType === 'wholesaler' && (
+                <WholesalerFields
+                  formData={formData}
+                  errors={errors}
+                  handleInputChange={handleInputChange}
+                />
+              )}
+
+              {/* Terms Acceptance */}
+              <View style={styles.checkboxRow}>
+                <Checkbox
+                  value={!!formData.termsAccepted}
+                  onValueChange={(val) => handleInputChange('termsAccepted', val)}
+                  tintColors={{ true: '#FF8C00', false: '#aaa' }}
+                />
+                <Text style={styles.checkboxText}>I accept the terms and conditions *</Text>
+              </View>
+              {!!errors.termsAccepted && <Text style={styles.errorText}>{errors.termsAccepted}</Text>}
+
+              {/* Submit Button */}
+              <TouchableOpacity
+                style={[styles.submitButton, (!isFormValidAndReady() || loading) && styles.disabledButton]}
+                onPress={handleSubmit}
+                disabled={!isFormValidAndReady() || loading}
+              >
+                <Text style={styles.submitButtonText}>
+                  {loading ? 'Registering...' : 'Register Business'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
+
+      {/* OTP Modal */}
+      <OtpModal
+        visible={showOtpModal}
+        phoneNumber={formData.phoneNumber}
+        otp={otp}
+        setOtp={setOtp}
+        loading={loading}
+        onCancel={() => setShowOtpModal(false)}
+        onVerify={handleVerifyOTP}
+      />
     </LinearGradient>
   );
 }
@@ -473,5 +610,67 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     textAlign: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 24,
+    width: '85%',
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    color: '#FF8C00',
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  otpInput: {
+    borderWidth: 2,
+    borderColor: '#FF8C00',
+    borderRadius: 8,
+    padding: 15,
+    fontSize: 18,
+    width: '100%',
+    marginBottom: 20,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    marginHorizontal: 5,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  verifyButton: {
+    backgroundColor: '#FF8C00',
+  },
+  cancelButtonText: {
+    color: '#666',
+    fontWeight: 'bold',
+  },
+  verifyButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
   },
 });
