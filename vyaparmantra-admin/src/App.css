@@ -1,0 +1,28 @@
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #FF8C00;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #e67c00;
+}
+
+/* Override default styles */
+.App {
+  margin: 0;
+  padding: 0;
+  font-family: 'Roboto', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
