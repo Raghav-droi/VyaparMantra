@@ -52,10 +52,9 @@ const UserTable = () => {
         id: doc.id,
         ...doc.data(),
         createdAt: doc.data().createdAt?.toDate?.()?.toLocaleDateString() || 'N/A',
-        status: doc.data().status || 'active' // Default status
+        status: doc.data().status || 'active'
       }));
-      
-      console.log('Fetched users:', usersData);
+
       setUsers(usersData);
       setFilteredUsers(usersData);
     } catch (error) {
@@ -65,18 +64,7 @@ const UserTable = () => {
     }
   };
 
-  const handleStatusToggle = async (userId, currentStatus) => {
-    try {
-      const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
-      await updateDoc(doc(db, 'users', userId), { status: newStatus });
-      fetchUsers();
-    } catch (error) {
-      console.error('Error updating status:', error);
-    }
-  };
-
   const handleEditUser = (user) => {
-    console.log('Selected user for edit:', user);
     setSelectedUser(user);
     setOpenModal(true);
   };
@@ -123,29 +111,25 @@ const UserTable = () => {
             <Table stickyHeader>
               <TableHead>
                 <TableRow sx={{ backgroundColor: '#FFF8E1' }}>
-                  <TableCell sx={{ fontWeight: 'bold', color: '#3949AB', minWidth: 150 }}>Owner Name</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', color: '#3949AB', minWidth: 100 }}>Type</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', color: '#3949AB', minWidth: 120 }}>Phone</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', color: '#3949AB', minWidth: 150 }}>Trade Name</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', color: '#3949AB', minWidth: 150 }}>GSTIN</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', color: '#3949AB', minWidth: 150 }}>Bank Name</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', color: '#3949AB', minWidth: 120 }}>Account</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', color: '#3949AB', minWidth: 100 }}>IFSC</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', color: '#3949AB', minWidth: 100 }}>Status</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', color: '#3949AB', minWidth: 100 }}>Created</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', color: '#3949AB', minWidth: 120 }}>Actions</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', color: '#3949AB' }}>Owner Name</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', color: '#3949AB' }}>Type</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', color: '#3949AB' }}>Phone</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', color: '#3949AB' }}>Trade Name</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', color: '#3949AB' }}>Status</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', color: '#3949AB' }}>Created</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', color: '#3949AB' }}>Actions</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={11} align="center" sx={{ py: 4 }}>
+                    <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
                       Loading users...
                     </TableCell>
                   </TableRow>
                 ) : filteredUsers.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={11} align="center" sx={{ py: 4 }}>
+                    <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
                       No users found
                     </TableCell>
                   </TableRow>
@@ -156,28 +140,16 @@ const UserTable = () => {
                       <TableCell>
                         <Chip
                           label={user.userType || 'retail'}
-                          color={user.userType === 'wholesaler' ? 'primary' : 'secondary'}
+                          color={user.userType === 'wholesale' ? 'primary' : 'secondary'}
                           size="small"
                           sx={{
-                            bgcolor: user.userType === 'wholesaler' ? '#FF8C00' : '#3949AB',
+                            bgcolor: user.userType === 'wholesale' ? '#FF8C00' : '#3949AB',
                             color: 'white'
                           }}
                         />
                       </TableCell>
                       <TableCell>{user.phoneNumber || 'N/A'}</TableCell>
                       <TableCell>{user.tradeName || 'N/A'}</TableCell>
-                      <TableCell>
-                        {user.userType === 'wholesaler' ? (user.gstinNumber || 'N/A') : '-'}
-                      </TableCell>
-                      <TableCell>
-                        {user.userType === 'wholesaler' ? (user.bankName || 'N/A') : '-'}
-                      </TableCell>
-                      <TableCell>
-                        {user.userType === 'wholesaler' ? (user.currentAccountDetails || 'N/A') : '-'}
-                      </TableCell>
-                      <TableCell>
-                        {user.userType === 'wholesaler' ? (user.ifscCode || 'N/A') : '-'}
-                      </TableCell>
                       <TableCell>
                         <Chip
                           label={user.status || 'active'}
@@ -187,31 +159,18 @@ const UserTable = () => {
                       </TableCell>
                       <TableCell>{user.createdAt}</TableCell>
                       <TableCell>
-                        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            onClick={() => handleEditUser(user)}
-                            sx={{ 
-                              color: '#FF8C00', 
-                              borderColor: '#FF8C00',
-                              '&:hover': {
-                                backgroundColor: 'rgba(255, 140, 0, 0.1)'
-                              }
-                            }}
-                          >
-                            <EditIcon fontSize="small" />
-                          </Button>
-                          <Button
-                            size="small"
-                            variant="contained"
-                            color={user.status === 'active' ? 'error' : 'success'}
-                            onClick={() => handleStatusToggle(user.id, user.status)}
-                            sx={{ fontSize: '11px', minWidth: 'auto', px: 1 }}
-                          >
-                            {user.status === 'active' ? 'Deactivate' : 'Activate'}
-                          </Button>
-                        </Box>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => handleEditUser(user)}
+                          sx={{ 
+                            color: '#FF8C00', 
+                            borderColor: '#FF8C00',
+                            '&:hover': { backgroundColor: 'rgba(255,140,0,0.1)' }
+                          }}
+                        >
+                          <EditIcon fontSize="small" />
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))

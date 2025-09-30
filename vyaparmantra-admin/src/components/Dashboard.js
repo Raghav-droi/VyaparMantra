@@ -16,7 +16,7 @@ import {
   TrendingUp as TrendingUpIcon,
   VerifiedUser as VerifiedUserIcon,
 } from '@mui/icons-material';
-import { collection, getDocs, query, orderBy } from 'firebase/firestore';
+import { collection, getDocs,} from 'firebase/firestore';
 import { db } from '../config/firebase';
 
 const Dashboard = () => {
@@ -63,7 +63,7 @@ const Dashboard = () => {
       // Calculate stats
       const totalUsers = users.length;
       const retailers = users.filter(u => u.userType === 'retail' || u.userType === 'retailer').length;
-      const wholesalers = users.filter(u => u.userType === 'wholesaler').length;
+      const wholesalers = users.filter(u => u.userType === 'wholesale').length;
       const verifiedUsers = users.filter(u => u.phoneVerified === true || u.isOtpVerified === true).length;
       
       const newStats = {

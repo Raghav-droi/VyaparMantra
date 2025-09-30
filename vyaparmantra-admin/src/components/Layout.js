@@ -6,7 +6,7 @@ import {
 } from '@mui/material';
 import { theme } from '../styles/theme';
 import Sidebar from './Sidebar';
-import TopBar from './TopBar';
+import { Link } from 'react-router-dom';
 
 const Layout = ({ children, currentPage, setCurrentPage }) => {
   return (
@@ -21,7 +21,6 @@ const Layout = ({ children, currentPage, setCurrentPage }) => {
       >
         <Sidebar currentPage={currentPage} setCurrentPage={setCurrentPage} />
         <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
-          <TopBar />
           <Box 
             component="main" 
             sx={{ 
@@ -31,6 +30,12 @@ const Layout = ({ children, currentPage, setCurrentPage }) => {
               minHeight: 'calc(100vh - 64px)'
             }}
           >
+            <nav style={{ padding: '16px', background: '#FF8C00', color: 'white' }}>
+              <Link to="/dashboard" style={{ marginRight: 16, color: 'white', textDecoration: 'none' }}>Dashboard</Link>
+              <Link to="/users" style={{ marginRight: 16, color: 'white', textDecoration: 'none' }}>Users</Link>
+              <Link to="/business" style={{ marginRight: 16, color: 'white', textDecoration: 'none' }}>Business Analytics</Link>
+              <Link to="/reports" style={{ color: 'white', textDecoration: 'none' }}>Reports</Link>
+            </nav>
             {children}
           </Box>
         </Box>

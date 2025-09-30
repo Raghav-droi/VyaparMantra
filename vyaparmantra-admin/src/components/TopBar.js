@@ -9,25 +9,22 @@ import {
   Badge,
   Menu,
   MenuItem,
-  Divider,
   ListItemIcon,
   ListItemText,
-  Paper,
 } from '@mui/material';
 import { 
   Notifications as NotificationsIcon,
-  AccountCircle as AccountCircleIcon,
   Person as PersonIcon,
   Business as BusinessIcon,
-  CheckCircle as CheckCircleIcon,
 } from '@mui/icons-material';
-import { collection, getDocs, query, orderBy, limit, where } from 'firebase/firestore';
+import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
-const TopBar = () => {
+const TopBar = ({ admin, onLogout }) => {
   const [anchorEl, setAnchorEl] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [profileAnchor, setProfileAnchor] = useState(null);
 
   useEffect(() => {
     fetchNotifications();
@@ -60,6 +57,7 @@ const TopBar = () => {
       // Sort by most recent first
       notificationData.sort((a, b) => b.timestamp - a.timestamp);
       
+      notificationData.forEach(n => n.read = false); // All unread by default
       setNotifications(notificationData);
       setUnreadCount(notificationData.length);
     } catch (error) {
@@ -69,11 +67,19 @@ const TopBar = () => {
 
   const handleNotificationClick = (event) => {
     setAnchorEl(event.currentTarget);
+
+    // Mark all notifications as read when menu opens
+    const updatedNotifications = notifications.map(n => ({ ...n, read: true }));
+    setNotifications(updatedNotifications);
+    setUnreadCount(0);
   };
 
   const handleNotificationClose = () => {
     setAnchorEl(null);
   };
+
+  const handleProfileClick = (event) => setProfileAnchor(event.currentTarget);
+  const handleProfileClose = () => setProfileAnchor(null);
 
   const formatTimeAgo = (date) => {
     const now = new Date();
@@ -91,6 +97,10 @@ const TopBar = () => {
       sx={{ 
         background: 'linear-gradient(135deg, #FF8C00 0%, #FFB347 50%, #FFD580 100%)',
         color: 'white',
+        zIndex: 1201, // ensures it's above the sidebar
+        ml: { sm: '275px' }, // add left margin for sidebar width
+        width: { sm: 'calc(100% - 220px)' }, // shrink width to not overlap sidebar
+        transition: 'margin-left 0.3s, width 0.3s',
       }}
     >
       <Toolbar>
@@ -125,7 +135,8 @@ const TopBar = () => {
           </Box>
         </Box>
         
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2,mr:7 }}>
+          {/* Notifications */}
           <IconButton 
             sx={{ 
               color: 'white',
@@ -143,21 +154,20 @@ const TopBar = () => {
             </Badge>
           </IconButton>
           
-          <Avatar sx={{ 
-            bgcolor: 'rgba(255,255,255,0.2)',
-            width: 40,
-            height: 40,
-            fontSize: '16px',
-            fontWeight: 'bold',
-            border: '2px solid rgba(255,255,255,0.3)',
-            '&:hover': {
-              transform: 'scale(1.1)',
-              border: '2px solid rgba(255,255,255,0.5)',
-            },
-            transition: 'all 0.3s ease',
-          }}>
-            A
-          </Avatar>
+          {/* Profile */}
+          <IconButton onClick={handleProfileClick}>
+            <Avatar>{admin?.username?.charAt(0).toUpperCase()}</Avatar>
+          </IconButton>
+          <Menu
+            anchorEl={profileAnchor}
+            open={Boolean(profileAnchor)}
+            onClose={handleProfileClose}
+          >
+            <MenuItem disabled>
+              <ListItemText primary={admin?.username} secondary={admin?.role || 'admin'} />
+            </MenuItem>
+            <MenuItem onClick={() => { handleProfileClose(); onLogout(); }}>Logout</MenuItem>
+          </Menu>
         </Box>
       </Toolbar>
 
