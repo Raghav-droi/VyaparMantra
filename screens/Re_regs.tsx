@@ -1,9 +1,26 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
-import { CheckCircle, Store, Truck, DollarSign, ArrowRight } from 'lucide-react-native'; // Make sure to install lucide-react-native or substitute with any icon library
+import { useRoute } from '@react-navigation/native';
+import { CheckCircle, Store, Truck, DollarSign, ArrowRight } from 'lucide-react-native';
 import LinearGradient from 'react-native-linear-gradient';
 
+type RouteParams = {
+  userType?: string;
+  userId?: string;
+};
+
 export default function RetailerSuccessPage({ navigation }: any) {
+  const route = useRoute();
+  const { userType, userId } = (route.params as RouteParams) || {};
+
+  const handleContinue = () => {
+    if (userType === 'wholesale') {
+      navigation.replace('WholesalerDashboard', { userId });
+    } else {
+      navigation.replace('RetailerDashboard');
+    }
+  };
+
   return (
     <View style={styles.container}>
       {/* Gradient Background */}
@@ -59,7 +76,7 @@ export default function RetailerSuccessPage({ navigation }: any) {
             </View>
 
             {/* Action Button */}
-            <TouchableOpacity style={styles.button} onPress={() => navigation.replace('Home')}>
+            <TouchableOpacity style={styles.button} onPress={handleContinue}>
               <Text style={styles.buttonText}>Continue</Text>
               <ArrowRight stroke="#fff" width={16} height={16} style={{ marginLeft: 6 }} />
             </TouchableOpacity>

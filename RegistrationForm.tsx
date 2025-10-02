@@ -310,7 +310,7 @@ export default function RegistrationForm({ navigation }: any) {
         createdAt: new Date(),
       });
 
-     navigation.replace('Re_regs'); // Directly navigate to success screen
+     navigation.replace('Re_regs', { userType: formData.userType, userId });
     } catch (error) {
       console.error('Registration error:', error);
       Alert.alert('Error', 'Registration failed. Please try again.');

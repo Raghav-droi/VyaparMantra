@@ -7,6 +7,7 @@ import RegistrationForm from './RegistrationForm';
 import RetailerProfile from './screens/RetailerProfile';
 import WholesalerProfile from './screens/WholesalerProfile';
 import RetailerSuccessPage from './screens/Re_regs'; // Use default import
+import { WholesalerDashboard } from './screens/WholesalerDashboard';
 
 const Stack = createStackNavigator();
 
@@ -18,6 +19,7 @@ const MainApp = () => (
       <Stack.Screen name="RetailerProfile" component={RetailerProfile} />
       <Stack.Screen name="WholesalerProfile" component={WholesalerProfile} />
       <Stack.Screen name="Re_regs" component={RetailerSuccessPage} />
+      <Stack.Screen name="WholesalerDashboard" component={WholesalerDashboard} /> 
     </Stack.Navigator>
   </NavigationContainer>
 );
