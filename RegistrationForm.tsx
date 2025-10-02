@@ -25,9 +25,12 @@ import LocationField from './components/LocationField';
 import OtpModal from './components/OtpModal';
 import WholesalerFields from './components/WholesalerFields';
 import FormInput from './components/FormInput';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from './firebase'; // adjust path as needed
+import uuid from 'react-native-uuid';
 
 interface FormData {
-  userType: 'wholesaler' | 'retail';
+  userType: 'wholesale' | 'retail';
   businessOwnerName: string;
   idProofType: string;
   idProof: string;
@@ -106,7 +109,7 @@ export default function RegistrationForm({ navigation }: any) {
     if (!formData.phoneNumber.trim()) newErrors.phoneNumber = 'Required';
     else if (!/^\d{10}$/.test(formData.phoneNumber)) newErrors.phoneNumber = 'Enter valid 10-digit phone';
 
-    if (formData.userType === 'wholesaler') {
+    if (formData.userType === 'wholesale') {
       if (!formData.gstinNumber.trim()) newErrors.gstinNumber = 'Required for wholesalers';
       if (!formData.currentAccountDetails.trim()) newErrors.currentAccountDetails = 'Required for wholesalers';
       if (!formData.bankName.trim()) newErrors.bankName = 'Required for wholesalers';
@@ -130,7 +133,7 @@ export default function RegistrationForm({ navigation }: any) {
       formData.termsAccepted &&
       isOtpVerified;
 
-    if (formData.userType === 'wholesaler') {
+    if (formData.userType === 'wholesale') {
       return isBasicValid &&
         formData.gstinNumber.trim() !== '' &&
         formData.currentAccountDetails.trim() !== '' &&
@@ -273,7 +276,7 @@ export default function RegistrationForm({ navigation }: any) {
       setLoading(true);
 
       // Validate IFSC code for wholesalers
-      if (formData.userType === 'wholesaler' && formData.ifscCode) {
+      if (formData.userType === 'wholesale' && formData.ifscCode) {
         const ifscValidation = await validateIFSC(formData.ifscCode);
         if (!ifscValidation.valid) {
           Alert.alert('Error', 'Invalid IFSC Code. Please check and try again.');
@@ -288,39 +291,26 @@ export default function RegistrationForm({ navigation }: any) {
       }
 
       // Save user data to Firestore
-      const userId = auth().currentUser?.uid;
-      if (!userId) {
-        Alert.alert('Error', 'Authentication error. Please try again.');
-        setLoading(false);
-        return;
-      }
+      const userId = uuid.v4(); // Generates a unique ID compatible with React Native
 
-      const userData = {
-        ...formData,
-        userId,
-        phoneVerified: true,
-        createdAt: firestore.FieldValue.serverTimestamp(),
-        updatedAt: firestore.FieldValue.serverTimestamp(),
-        status: 'active'
-      };
+      await setDoc(doc(db, 'users', userId), {
+        businessOwnerName: formData.businessOwnerName,
+        tradeName: formData.tradeName,
+        phoneNumber: formData.phoneNumber,
+        userType: formData.userType,
+        idProofType: formData.idProofType,
+        idProof: formData.idProof,
+        address: formData.address,
+        location: formData.location,
+        gstinNumber: formData.gstinNumber,
+        bankName: formData.bankName,
+        currentAccountDetails: formData.currentAccountDetails,
+        ifscCode: formData.ifscCode,
+        status: 'active',
+        createdAt: new Date(),
+      });
 
-      await firestore().collection('users').doc(userId).set(userData);
-
-      Alert.alert(
-        'Registration Successful!', 
-        'Your business has been registered successfully.',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              // Navigate to appropriate profile screen based on user type
-              const profileScreen = formData.userType === 'retail' ? 'RetailerProfile' : 'WholesalerProfile';
-              navigation.replace(profileScreen);
-            }
-          }
-        ]
-      );
-
+     navigation.replace('Re_regs'); // Directly navigate to success screen
     } catch (error) {
       console.error('Registration error:', error);
       Alert.alert('Error', 'Registration failed. Please try again.');
@@ -342,7 +332,7 @@ export default function RegistrationForm({ navigation }: any) {
               <Text style={styles.title}>Business Registration</Text>
 
               {/* Business Type */}
-              <BusinessTypeSelector value={formData.userType} onChange={(val: 'wholesaler' | 'retail') => handleInputChange('userType', val)} />
+              <BusinessTypeSelector value={formData.userType} onChange={(val: 'wholesale' | 'retail') => handleInputChange('userType', val)} />
 
               {/* Owner Name */}
               <FormInput
@@ -430,7 +420,7 @@ export default function RegistrationForm({ navigation }: any) {
               {!!errors.phoneNumber && <Text style={styles.errorText}>{errors.phoneNumber}</Text>}
 
               {/* Wholesaler Fields */}
-              {formData.userType === 'wholesaler' && (
+              {formData.userType === 'wholesale' && (
                 <WholesalerFields
                   formData={formData}
                   errors={errors}

@@ -15,9 +15,9 @@ export default function BusinessTypeSelector({ value, onChange }) {
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.radioButton}
-          onPress={() => onChange('wholesaler')}
+          onPress={() => onChange('wholesale')}
         >
-          <View style={[styles.radioCircle, value === 'wholesaler' && styles.selectedRadio]} />
+          <View style={[styles.radioCircle, value === 'wholesale' && styles.selectedRadio]} />
           <Text style={styles.radioText}>Wholesaler</Text>
         </TouchableOpacity>
       </View>

@@ -16,15 +16,19 @@ import {
   Business as BusinessIcon,
   Analytics as AnalyticsIcon,
 } from '@mui/icons-material';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 const drawerWidth = 280;
 
-const Sidebar = ({ currentPage, setCurrentPage }) => {
+const Sidebar = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+
   const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: <DashboardIcon /> },
-    { id: 'users', label: 'Users Management', icon: <PeopleIcon /> },
-    { id: 'business', label: 'Business Analytics', icon: <BusinessIcon /> },
-    { id: 'reports', label: 'Reports', icon: <AnalyticsIcon /> },
+    { id: '/dashboard', label: 'Dashboard', icon: <DashboardIcon /> },
+    { id: '/users', label: 'Users Management', icon: <PeopleIcon /> },
+    { id: '/business', label: 'Business Analytics', icon: <BusinessIcon /> },
+    { id: '/reports', label: 'Reports', icon: <AnalyticsIcon /> },
   ];
 
   return (
@@ -66,8 +70,8 @@ const Sidebar = ({ currentPage, setCurrentPage }) => {
         {menuItems.map((item) => (
           <ListItem key={item.id} disablePadding sx={{ mb: 1 }}>
             <ListItemButton
-              onClick={() => setCurrentPage(item.id)}
-              selected={currentPage === item.id}
+              onClick={() => navigate(item.id)}
+              selected={location.pathname === item.id}
               sx={{
                 mx: 1,
                 borderRadius: 2,
@@ -89,7 +93,7 @@ const Sidebar = ({ currentPage, setCurrentPage }) => {
                 primary={item.label} 
                 primaryTypographyProps={{
                   fontSize: 15,
-                  fontWeight: currentPage === item.id ? 'bold' : 'medium',
+                  fontWeight: location.pathname === item.id ? 'bold' : 'medium',
                 }}
               />
             </ListItemButton>
