@@ -7,26 +7,23 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
-  Modal,
-  Platform,
   KeyboardAvoidingView,
   TouchableWithoutFeedback,
   Keyboard,
+  Platform,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Checkbox from '@react-native-community/checkbox';
 import DropDownPicker from 'react-native-dropdown-picker';
 import Geolocation from '@react-native-community/geolocation';
-import auth, { getAuth, signInWithPhoneNumber } from '@react-native-firebase/auth';
+import auth, { PhoneAuthProvider } from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
-import { request, PERMISSIONS, RESULTS } from 'react-native-permissions';
+import CryptoJS from 'crypto-js';
 import BusinessTypeSelector from './components/BusinessTypeSelector';
 import LocationField from './components/LocationField';
 import OtpModal from './components/OtpModal';
 import WholesalerFields from './components/WholesalerFields';
 import FormInput from './components/FormInput';
-import { doc, setDoc } from 'firebase/firestore';
-import { db } from './firebase'; // adjust path as needed
 import uuid from 'react-native-uuid';
 
 interface FormData {
@@ -42,6 +39,7 @@ interface FormData {
   currentAccountDetails: string;
   bankName: string;
   ifscCode: string;
+  password: string;
   termsAccepted: boolean;
 }
 
@@ -59,16 +57,33 @@ export default function RegistrationForm({ navigation }: any) {
     currentAccountDetails: '',
     bankName: '',
     ifscCode: '',
+    password: '',
     termsAccepted: false,
   });
 
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
-  const [confirmation, setConfirmation] = useState<any>(null);
   const [isOtpVerified, setIsOtpVerified] = useState(false);
   const [showOtpModal, setShowOtpModal] = useState(false);
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
-  const [locationLoading, setLocationLoading] = useState(false); // <-- Add this line
+  const [verificationId, setVerificationId] = useState('');
+  const [locationLoading, setLocationLoading] = useState(false);
+
+  const handleFetchLocation = () => {
+    setLocationLoading(true);
+    Geolocation.getCurrentPosition(
+      position => {
+        const { latitude, longitude } = position.coords;
+        handleInputChange('location', `${latitude},${longitude}`);
+        setLocationLoading(false);
+      },
+      error => {
+        Alert.alert('Error', 'Unable to fetch location');
+        setLocationLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+    );
+  };
 
   const [openIdProofType, setOpenIdProofType] = useState(false);
   const [idProofTypeItems, setIdProofTypeItems] = useState([
@@ -108,6 +123,8 @@ export default function RegistrationForm({ navigation }: any) {
     if (!formData.address.trim()) newErrors.address = 'Required';
     if (!formData.phoneNumber.trim()) newErrors.phoneNumber = 'Required';
     else if (!/^\d{10}$/.test(formData.phoneNumber)) newErrors.phoneNumber = 'Enter valid 10-digit phone';
+    if (!formData.password.trim()) newErrors.password = 'Password required';
+    else if (formData.password.length < 6) newErrors.password = 'Password must be at least 6 characters';
 
     if (formData.userType === 'wholesale') {
       if (!formData.gstinNumber.trim()) newErrors.gstinNumber = 'Required for wholesalers';
@@ -130,6 +147,7 @@ export default function RegistrationForm({ navigation }: any) {
       formData.tradeName.trim() !== '' &&
       formData.address.trim() !== '' &&
       /^\d{10}$/.test(formData.phoneNumber) &&
+      formData.password.trim().length >= 6 &&
       formData.termsAccepted &&
       isOtpVerified;
 
@@ -148,27 +166,24 @@ export default function RegistrationForm({ navigation }: any) {
       setErrors(prev => ({ ...prev, phoneNumber: 'Enter valid 10-digit phone' }));
       return;
     }
-
     try {
       setLoading(true);
       const phoneWithCountryCode = `+91${formData.phoneNumber}`;
-      const authInstance = getAuth();
-      const confirmationResult = await signInWithPhoneNumber(authInstance, phoneWithCountryCode);
-      setConfirmation(confirmationResult);
-      setShowOtpModal(true); // <-- This shows the OTP modal
+      const snapshot = await auth().verifyPhoneNumber(phoneWithCountryCode);
+      setVerificationId(snapshot.verificationId);
+      setShowOtpModal(true);
       Alert.alert('OTP Sent', `OTP sent to ${formData.phoneNumber}`);
     } catch (error) {
       console.error(error);
       Alert.alert('Error', 'Failed to send OTP. Please try again.');
-      setShowOtpModal(true); // <-- Optionally show modal for manual entry/debug
     } finally {
       setLoading(false);
     }
   };
 
   const handleVerifyOTP = async () => {
-    if (!confirmation) {
-      Alert.alert('Error', 'No OTP confirmation found. Please request OTP again.');
+    if (!verificationId) {
+      Alert.alert('Error', 'No verification ID found. Please request OTP again.');
       return;
     }
     if (!otp || otp.length !== 6) {
@@ -177,10 +192,10 @@ export default function RegistrationForm({ navigation }: any) {
     }
     try {
       setLoading(true);
-      await confirmation.confirm(otp);
+      const credential = PhoneAuthProvider.credential(verificationId, otp);
       setIsOtpVerified(true);
       setShowOtpModal(false);
-      Alert.alert('Success', 'Phone number verified successfully!');
+      Alert.alert('Success', 'Phone number verified!');
     } catch (error) {
       console.error(error);
       Alert.alert('Error', 'Invalid OTP. Please try again.');
@@ -189,128 +204,29 @@ export default function RegistrationForm({ navigation }: any) {
     }
   };
 
-
-  // Helper function to convert coordinates to address using Google Geocoding API
-  const getLocationName = async (latitude: number, longitude: number) => {
-    try {
-      const apiKey = 'AIzaSyBwvBIp9KarqwiBMQMTYdYCXcFZJpUDO6Y';
-      const response = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`
-      );
-      const data = await response.json();
-      console.log('Geocoding API response:', data); // <-- Add this line
-      if (data.status === 'OK' && data.results.length > 0) {
-        return data.results[0].formatted_address;
-      }
-      return `${latitude}, ${longitude}`;
-    } catch (error) {
-      console.error('Geocoding error:', error);
-      return `${latitude}, ${longitude}`;
-    }
-  };
-
-  const handleFetchLocation = async () => {
-    setLocationLoading(true);
-    try {
-      let permissionResult;
-      if (Platform.OS === 'ios') {
-        permissionResult = await request(PERMISSIONS.IOS.LOCATION_WHEN_IN_USE);
-      } else {
-        permissionResult = await request(PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION);
-      }
-
-      if (permissionResult === RESULTS.GRANTED) {
-        Geolocation.getCurrentPosition(
-          async (position) => {
-            const { latitude, longitude } = position.coords;
-            const locationName = await getLocationName(latitude, longitude);
-            handleInputChange('location', locationName);
-            setLocationLoading(false);
-          },
-          (error) => {
-            setLocationLoading(false);
-            Alert.alert('Location Error', `Unable to fetch location: ${error.message}`);
-            console.error('Location error:', error);
-          },
-          { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
-        );
-      } else {
-        setLocationLoading(false);
-        Alert.alert('Permission Denied', 'Location permission is required.');
-      }
-    } catch (error) {
-      setLocationLoading(false);
-      Alert.alert('Error', 'Failed to request location permission.');
-      console.error(error);
-    }
-  };
-
-  const validateIFSC = async (ifscCode: string) => {
-    try {
-      const response = await fetch(`https://ifsc.razorpay.com/${ifscCode}`);
-      if (response.ok) {
-        const data = await response.json();
-        if (data.BANK) {
-          return { valid: true, bank: data.BANK, branch: data.BRANCH };
-        }
-      }
-      return { valid: false };
-    } catch (error) {
-      console.error('IFSC validation error:', error);
-      return { valid: false };
-    }
-  };
-
   const handleSubmit = async () => {
-    if (!validateForm()) {
-      Alert.alert('Validation Error', 'Please fix errors before submitting.');
-      return;
-    }
-
     if (!isOtpVerified) {
       Alert.alert('Error', 'Please verify your phone number with OTP first.');
       return;
     }
-
+    if (!validateForm()) {
+      Alert.alert('Validation Error', 'Please fix errors before submitting.');
+      return;
+    }
     try {
       setLoading(true);
+      const collection = formData.userType === 'wholesale' ? 'wholesaler' : 'retailer';
+      const docName = formData.phoneNumber;
+      // Hash the password before saving
+      const hashedPassword = CryptoJS.SHA256(formData.password).toString();
 
-      // Validate IFSC code for wholesalers
-      if (formData.userType === 'wholesale' && formData.ifscCode) {
-        const ifscValidation = await validateIFSC(formData.ifscCode);
-        if (!ifscValidation.valid) {
-          Alert.alert('Error', 'Invalid IFSC Code. Please check and try again.');
-          setLoading(false);
-          return;
-        }
-        // Update bank name with validated bank name
-        setFormData(prev => ({
-          ...prev,
-          bankName: ifscValidation.bank || prev.bankName
-        }));
-      }
-
-      // Save user data to Firestore
-      const userId = uuid.v4(); // Generates a unique ID compatible with React Native
-
-      await setDoc(doc(db, 'users', userId), {
-        businessOwnerName: formData.businessOwnerName,
-        tradeName: formData.tradeName,
-        phoneNumber: formData.phoneNumber,
-        userType: formData.userType,
-        idProofType: formData.idProofType,
-        idProof: formData.idProof,
-        address: formData.address,
-        location: formData.location,
-        gstinNumber: formData.gstinNumber,
-        bankName: formData.bankName,
-        currentAccountDetails: formData.currentAccountDetails,
-        ifscCode: formData.ifscCode,
-        status: 'active',
+      await firestore().collection(collection).doc(docName).set({
+        ...formData,
+        password: hashedPassword,
+        uuid: uuid.v4(),
         createdAt: new Date(),
       });
-
-     navigation.replace('Re_regs', { userType: formData.userType, userId });
+      navigation.replace('Re_regs', { userType: formData.userType, docName });
     } catch (error) {
       console.error('Registration error:', error);
       Alert.alert('Error', 'Registration failed. Please try again.');
@@ -418,6 +334,16 @@ export default function RegistrationForm({ navigation }: any) {
                 </TouchableOpacity>
               </View>
               {!!errors.phoneNumber && <Text style={styles.errorText}>{errors.phoneNumber}</Text>}
+
+              {/* Password Field */}
+              <FormInput
+                label="Create Password *"
+                value={formData.password}
+                onChangeText={(text: string) => handleInputChange('password', text)}
+                placeholder="Create a password (min 6 chars)"
+                error={errors.password}
+                secureTextEntry={true}
+              />
 
               {/* Wholesaler Fields */}
               {formData.userType === 'wholesale' && (

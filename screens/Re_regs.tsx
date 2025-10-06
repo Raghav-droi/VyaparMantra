@@ -1,24 +1,21 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Alert } from 'react-native';
 import { useRoute } from '@react-navigation/native';
 import { CheckCircle, Store, Truck, DollarSign, ArrowRight } from 'lucide-react-native';
 import LinearGradient from 'react-native-linear-gradient';
+import auth from '@react-native-firebase/auth';
 
 type RouteParams = {
   userType?: string;
-  userId?: string;
+  docName?: string;
 };
 
 export default function RetailerSuccessPage({ navigation }: any) {
   const route = useRoute();
-  const { userType, userId } = (route.params as RouteParams) || {};
+  const { userType, docName } = (route.params as RouteParams) || {};
 
   const handleContinue = () => {
-    if (userType === 'wholesale') {
-      navigation.replace('WholesalerDashboard', { userId });
-    } else {
-      navigation.replace('RetailerDashboard');
-    }
+    navigation.replace('Login');
   };
 
   return (

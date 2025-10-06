@@ -2,56 +2,145 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, ScrollView, TouchableOpacity, Image, Switch, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { ArrowLeft, Camera, Eye, Package, DollarSign, Plus, X, Tag, Save, Upload } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { collection, addDoc, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, Timestamp, setDoc, doc, getDoc, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase'; // Adjust path if needed
 import { useRoute, useNavigation } from '@react-navigation/native';
+
+type AddProductRouteParams = {
+  userId: string;
+  tradeName?: string;
+};
 
 export default function AddProductPage() {
   const route = useRoute();
   const navigation = useNavigation();
-  const { userId } = route.params || {};
+  const { userId, tradeName } = (route.params as AddProductRouteParams) || {};
 
-  const [productImages, setProductImages] = useState([]);
-  const [tags, setTags] = useState([]);
+  const [productImages, setProductImages] = useState<string[]>([]);
+  const [tags, setTags] = useState<string[]>([]);
   const [currentTag, setCurrentTag] = useState('');
   const [isAvailable, setIsAvailable] = useState(true);
   const [isFeatured, setIsFeatured] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Master product info
   const [form, setForm] = useState({
-    productName: '', category: '', description: '', brand: '', manufacturer: '', stockQuantity: '', baseUnit: '',
-    minOrder: '', maxOrder: '', weight: '', dimensions: '', expiryDate: '', processingTime: '', storageConditions: ""
+    productName: '', brand: '', category: '', description: '', unit: '', image: ''
   });
 
-  const handleImageUpload = async () => {
-    let result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.7 });
-    if (!result.canceled) setProductImages([...productImages, result.assets[0].uri]);
-  };
-  const removeImage = idx => setProductImages(images => images.filter((_, i) => i !== idx));
-  const addTag = () => {
-    const tag = currentTag.trim();
-    if (tag && !tags.includes(tag)) {
-      setTags([...tags, tag]);
-      setCurrentTag('');
+  // Wholesaler-specific info
+  const [priceTiers, setPriceTiers] = useState<
+    { minQty: number; maxQty: number; pricePerUnit: number }[]
+  >([]);
+  const [minQty, setMinQty] = useState('');
+  const [maxQty, setMaxQty] = useState('');
+  const [pricePerUnit, setPricePerUnit] = useState('');
+  const [deliveryArea, setDeliveryArea] = useState('');
+  const [deliveryAreas, setDeliveryAreas] = useState<string[]>([]);
+
+  // Add price tier
+  const addPriceTier = () => {
+    if (minQty && maxQty && pricePerUnit) {
+      setPriceTiers([
+        ...priceTiers,
+        {
+          minQty: Number(minQty),
+          maxQty: Number(maxQty),
+          pricePerUnit: Number(pricePerUnit),
+        },
+      ]);
+      setMinQty('');
+      setMaxQty('');
+      setPricePerUnit('');
     }
   };
-  const removeTag = tagToRemove => setTags(tags => tags.filter(tag => tag !== tagToRemove));
 
+  // Add delivery area
+  const addDeliveryArea = () => {
+    const area = deliveryArea.trim();
+    if (area && !deliveryAreas.includes(area)) {
+      setDeliveryAreas([...deliveryAreas, area]);
+      setDeliveryArea('');
+    }
+  };
+
+  // Remove delivery area
+  const removeDeliveryArea = (area: string) => {
+    setDeliveryAreas(deliveryAreas.filter(a => a !== area));
+  };
+
+  // Image upload
+  const handleImageUpload = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.7 });
+    if (!result.canceled) {
+      setProductImages([...productImages, result.assets[0].uri]);
+      setForm(f => ({ ...f, image: result.assets[0].uri }));
+    }
+  };
+  const removeImage = idx => setProductImages(images => images.filter((_, i) => i !== idx));
+
+  // Save product
   const handleSave = async () => {
-    if (!form.productName || !form.category) {
-      Alert.alert('Missing Info', 'Product name and category are required.');
+    if (!form.productName || !form.category || !form.brand || !form.unit) {
+      Alert.alert('Missing Info', 'Product name, brand, category, and unit are required.');
+      return;
+    }
+    if (priceTiers.length === 0) {
+      Alert.alert('Missing Info', 'Add at least one price tier.');
       return;
     }
     setLoading(true);
     try {
-      await addDoc(collection(db, 'products'), {
-        ...form,
+      // 1. Add to products (master catalog)
+      const productId = form.productName.trim().replace(/\s+/g, "_").toLowerCase();
+      const productRef = doc(db, 'products', productId);
+      const productSnap = await getDoc(productRef);
+
+      if (!productSnap.exists()) {
+        await setDoc(productRef, {
+          productName: form.productName,
+          brand: form.brand,
+          category: form.category,
+          description: form.description,
+          unit: form.unit,
+          image: form.image,
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now(),
+        });
+      }
+
+      // 2. Check for duplicate in wholesalerProducts
+      const q = query(
+        collection(db, 'wholesalerProducts'),
+        where('wholesalerId', '==', userId),
+        where('productId', '==', productId)
+      );
+      const existing = await getDocs(q);
+      if (!existing.empty) {
+        Alert.alert('Duplicate', 'You have already listed this product.');
+        setLoading(false);
+        return;
+      }
+
+      // 3. Add to wholesalerProducts
+      await addDoc(collection(db, 'wholesalerProducts'), {
+        wholesalerId: userId,
+        wholesalerName: tradeName || '',
+        productId: productId,
+        brand: form.brand,
+        priceTiers,
+        available: isAvailable,
+        stock: null,
+        deliveryArea: deliveryAreas,
+        rating: null,
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+        isFeatured,
         tags,
         images: productImages,
-        isAvailable,
-        isFeatured,
-        ownerId: userId,
-        createdAt: Timestamp.now(),
+        description: form.description,
       });
+
       Alert.alert('Success', 'Product added successfully!');
       navigation.goBack();
     } catch (err) {
@@ -70,6 +159,7 @@ export default function AddProductPage() {
           <TouchableOpacity><Eye stroke="#fff" width={24} /></TouchableOpacity>
         </View>
         
+        {/* Product Images */}
         <View style={styles.card}>
           <View style={styles.cardTitle}><Camera stroke="#222" width={18} /><Text style={{ marginLeft: 7 }}>Product Images</Text></View>
           <View style={{ flexDirection: 'row', flexWrap: "wrap" }}>
@@ -89,24 +179,57 @@ export default function AddProductPage() {
           <Text style={styles.hintText}>Upload up to 6 images.</Text>
         </View>
 
+        {/* Master Product Info */}
         <View style={styles.card}>
           <View style={styles.cardTitle}><Package stroke="#222" width={18} /><Text style={{ marginLeft: 7 }}>Basic Information</Text></View>
           <TextInput style={styles.input} placeholder="Product Name *" value={form.productName} onChangeText={t => setForm(f => ({ ...f, productName: t }))} />
+          <TextInput style={styles.input} placeholder="Brand *" value={form.brand} onChangeText={t => setForm(f => ({ ...f, brand: t }))} />
           <TextInput style={styles.input} placeholder="Category *" value={form.category} onChangeText={t => setForm(f => ({ ...f, category: t }))} />
+          <TextInput style={styles.input} placeholder="Unit * (e.g. 1L, 1kg)" value={form.unit} onChangeText={t => setForm(f => ({ ...f, unit: t }))} />
           <TextInput style={styles.input} placeholder="Description" value={form.description} onChangeText={t => setForm(f => ({ ...f, description: t }))} />
-          <TextInput style={styles.input} placeholder="Brand" value={form.brand} onChangeText={t => setForm(f => ({ ...f, brand: t }))} />
-          <TextInput style={styles.input} placeholder="Manufacturer" value={form.manufacturer} onChangeText={t => setForm(f => ({ ...f, manufacturer: t }))} />
-          <TextInput style={styles.input} placeholder="Stock Quantity" value={form.stockQuantity} onChangeText={t => setForm(f => ({ ...f, stockQuantity: t }))} keyboardType="numeric" />
-          <TextInput style={styles.input} placeholder="Base Unit" value={form.baseUnit} onChangeText={t => setForm(f => ({ ...f, baseUnit: t }))} />
-          <TextInput style={styles.input} placeholder="Min Order" value={form.minOrder} onChangeText={t => setForm(f => ({ ...f, minOrder: t }))} keyboardType="numeric" />
-          <TextInput style={styles.input} placeholder="Max Order" value={form.maxOrder} onChangeText={t => setForm(f => ({ ...f, maxOrder: t }))} keyboardType="numeric" />
-          <TextInput style={styles.input} placeholder="Weight" value={form.weight} onChangeText={t => setForm(f => ({ ...f, weight: t }))} />
-          <TextInput style={styles.input} placeholder="Dimensions" value={form.dimensions} onChangeText={t => setForm(f => ({ ...f, dimensions: t }))} />
-          <TextInput style={styles.input} placeholder="Expiry Date" value={form.expiryDate} onChangeText={t => setForm(f => ({ ...f, expiryDate: t }))} />
-          <TextInput style={styles.input} placeholder="Processing Time" value={form.processingTime} onChangeText={t => setForm(f => ({ ...f, processingTime: t }))} />
-          <TextInput style={styles.input} placeholder="Storage Conditions" value={form.storageConditions} onChangeText={t => setForm(f => ({ ...f, storageConditions: t }))} />
         </View>
 
+        {/* Price Tiers */}
+        <View style={styles.card}>
+          <View style={styles.cardTitle}><DollarSign stroke="#222" width={18} /><Text style={{ marginLeft: 7 }}>Price Tiers</Text></View>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <TextInput style={[styles.input, { flex: 1 }]} placeholder="Min Qty" value={minQty} onChangeText={setMinQty} keyboardType="numeric" />
+            <TextInput style={[styles.input, { flex: 1 }]} placeholder="Max Qty" value={maxQty} onChangeText={setMaxQty} keyboardType="numeric" />
+            <TextInput style={[styles.input, { flex: 1 }]} placeholder="Price/Unit" value={pricePerUnit} onChangeText={setPricePerUnit} keyboardType="numeric" />
+            <TouchableOpacity onPress={addPriceTier}><Plus stroke="#2563eb" width={18} /></TouchableOpacity>
+          </View>
+          <View style={{ marginTop: 8 }}>
+            {priceTiers.map((tier, idx) => (
+              <View key={idx} style={{ flexDirection: "row", alignItems: "center", marginBottom: 4 }}>
+                <Text style={{ fontSize: 13, color: "#222" }}>
+                  {tier.minQty} - {tier.maxQty} units: ₹{tier.pricePerUnit}
+                </Text>
+                <TouchableOpacity onPress={() => setPriceTiers(priceTiers.filter((_, i) => i !== idx))}>
+                  <X stroke="#e11d48" width={13} style={{ marginLeft: 8 }} />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* Delivery Areas */}
+        <View style={styles.card}>
+          <View style={styles.cardTitle}><Tag stroke="#222" width={18} /><Text style={{ marginLeft: 7 }}>Delivery Areas</Text></View>
+          <View style={{ flexDirection: "row" }}>
+            <TextInput style={[styles.input, { flex: 1 }]} placeholder="Add area" value={deliveryArea} onChangeText={setDeliveryArea} onSubmitEditing={addDeliveryArea} />
+            <TouchableOpacity onPress={addDeliveryArea}><Plus stroke="#2563eb" width={18} /></TouchableOpacity>
+          </View>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", marginTop: 7 }}>
+            {deliveryAreas.map(area => (
+              <View key={area} style={styles.tagBadge}>
+                <Text>{area}</Text>
+                <TouchableOpacity onPress={() => removeDeliveryArea(area)}><X stroke="#111" width={13} /></TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* Tags & Settings */}
         <View style={styles.card}>
           <View style={styles.cardTitle}><Tag stroke="#222" width={18} /><Text style={{ marginLeft: 7 }}>Tags & Settings</Text></View>
           <View style={{ flexDirection: "row" }}>

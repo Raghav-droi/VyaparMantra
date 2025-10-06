@@ -4,7 +4,7 @@ import LinearGradient from "react-native-linear-gradient";
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Card } from "./components/ui/card";
 import { Button } from "./components/ui/button";
-
+import auth from '@react-native-firebase/auth';
 
 import type { StackNavigationProp } from '@react-navigation/stack';
 
@@ -46,10 +46,7 @@ export default function Home_Page_Login({ navigation }: HomePageLoginProps) {
             <Text style={styles.cardTitle}>Login as</Text>
             <Button
   style={styles.wholesalerButton}
-  onPress={() => {
-    // Add wholesaler login logic here
-    console.log("Wholesaler Login pressed");
-  }}
+  onPress={() => navigation.navigate('Login')}
 >
   <Icon name="warehouse" size={22} color="#fff" />
   <Text style={styles.buttonText}> Wholesaler Login</Text>
@@ -58,8 +55,8 @@ export default function Home_Page_Login({ navigation }: HomePageLoginProps) {
 <Button
   style={styles.retailerButton}
   onPress={() => {
-    // Add retailer login logic here
-    console.log("Retailer Login pressed");
+    // If you have a retailer login, navigate to its screen
+    // navigation.navigate('RetailerLogin');
   }}
 >
   <Icon name="shopping" size={22} color="#fff" />

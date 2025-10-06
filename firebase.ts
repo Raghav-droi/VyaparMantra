@@ -1,23 +1,18 @@
-import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
+import firebase from '@react-native-firebase/app';
+import auth from '@react-native-firebase/auth';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyBwvBIp9KarqwiBMQMTYdYCXcFZJpUDO6Y", // Actual API key
+  apiKey: "AIzaSyBwvBIp9KarqwiBMQMTYdYCXcFZJpUDO6Y",
   authDomain: "vm-authentication-4d4ea.firebaseapp.com",
   projectId: "vm-authentication-4d4ea",
   storageBucket: "vm-authentication-4d4ea.appspot.com",
-  messagingSenderId: "your-sender-id", // Replace with actual sender ID
-  appId: "1:1096903709567:web:8c2c8e2e2e2e2e2e2e2e2e" // Replace with your actual App ID
+  messagingSenderId: "your-sender-id",
+  appId: "1:1096903709567:web:8c2c8e2e2e2e2e2e2e2e2e"
 };
 
 // Initialize Firebase
-const app = initializeApp(firebaseConfig);
+if (!firebase.apps.length) {
+  firebase.initializeApp(firebaseConfig);
+}
 
-// Initialize Firestore
-export const db = getFirestore(app);
-
-// Initialize Auth
-export const auth = getAuth(app);
-
-export default app;
+export { firebase, auth };
