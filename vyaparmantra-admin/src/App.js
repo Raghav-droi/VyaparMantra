@@ -6,6 +6,8 @@ import Dashboard from './components/Dashboard';
 import UserTable from './components/UserTable';
 import TopBar from './components/TopBar';
 import './App.css';
+import ProductBulkUpload from './components/Product_BulkUpload';
+import ProductFieldGeneration from './components/Product_field_generation';
 
 function App() {
   const [admin, setAdmin] = useState(null);
@@ -56,6 +58,8 @@ function App() {
               <Route path="/users" element={<UserTable />} />
               <Route path="/business" element={<div>Business Analytics - Coming Soon</div>} />
               <Route path="/reports" element={<div>Reports - Coming Soon</div>} />
+              <Route path="/bulk-upload" element={<ProductBulkUpload />} />
+              <Route path="/field-settings" element={<ProductFieldGeneration />} />
               <Route path="*" element={<Dashboard />} />
             </Routes>
           </Layout>

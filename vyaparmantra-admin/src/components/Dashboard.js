@@ -16,7 +16,7 @@ import {
   TrendingUp as TrendingUpIcon,
   VerifiedUser as VerifiedUserIcon,
 } from '@mui/icons-material';
-import { collection, getDocs,} from 'firebase/firestore';
+import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
 const Dashboard = () => {
@@ -38,46 +38,40 @@ const Dashboard = () => {
     try {
       setLoading(true);
       setError(null);
-      
-      console.log('Fetching users from Firestore...');
-      
-      // Simple query without ordering first
-      const usersRef = collection(db, 'users');
-      const usersSnapshot = await getDocs(usersRef);
-      
-      console.log('Raw snapshot:', usersSnapshot);
-      console.log('Number of documents:', usersSnapshot.docs.length);
-      
-      const users = [];
-      usersSnapshot.forEach((doc) => {
-        const userData = doc.data();
-        console.log('User data:', userData);
-        users.push({
-          id: doc.id,
-          ...userData
-        });
-      });
-      
-      console.log('All users:', users);
-      
+
+      // Fetch wholesalers
+      const wholesalerRef = collection(db, 'wholesaler');
+      const wholesalerSnapshot = await getDocs(wholesalerRef);
+      const wholesalers = wholesalerSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      // Fetch retailers
+      const retailerRef = collection(db, 'retailer');
+      const retailerSnapshot = await getDocs(retailerRef);
+      const retailers = retailerSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      const allUsers = [...wholesalers, ...retailers];
+
       // Calculate stats
-      const totalUsers = users.length;
-      const retailers = users.filter(u => u.userType === 'retail' || u.userType === 'retailer').length;
-      const wholesalers = users.filter(u => u.userType === 'wholesale').length;
-      const verifiedUsers = users.filter(u => u.phoneVerified === true || u.isOtpVerified === true).length;
-      
+      const totalUsers = allUsers.length;
+      const retailerCount = retailers.length;
+      const wholesalerCount = wholesalers.length;
+      const verifiedUsers = allUsers.filter(u => u.phoneVerified === true || u.isOtpVerified === true).length;
+
       const newStats = {
         totalUsers,
-        retailers,
-        wholesalers,
-        verifiedUsers
+        retailers: retailerCount,
+        wholesalers: wholesalerCount,
+        verifiedUsers,
       };
-      
-      console.log('Calculated stats:', newStats);
-      
+
       setStats(newStats);
-      setDebugInfo(`Found ${totalUsers} users: ${retailers} retailers, ${wholesalers} wholesalers`);
-      
+      setDebugInfo(`Found ${totalUsers} users: ${retailerCount} retailers, ${wholesalerCount} wholesalers`);
     } catch (error) {
       console.error('Error fetching stats:', error);
       setError(`Error: ${error.message}`);

@@ -1,0 +1,363 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Box,
+  Typography,
+  Button,
+  Paper,
+  MenuItem,
+  Select,
+  InputLabel,
+  FormControl,
+  Alert,
+} from '@mui/material';
+import { collection, addDoc, getDocs, doc, getDoc } from 'firebase/firestore';
+import { db } from '../config/firebase';
+import Papa from 'papaparse';
+import { saveAs } from 'file-saver';
+
+const ProductBulkUpload = () => {
+  const [csvFile, setCsvFile] = useState(null);
+  const [wholesalerId, setWholesalerId] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [message, setMessage] = useState('');
+  const [wholesalers, setWholesalers] = useState([]);
+  const [failedProducts, setFailedProducts] = useState([]);
+
+  useEffect(() => {
+    const fetchWholesalers = async () => {
+      try {
+        const snapshot = await getDocs(collection(db, 'wholesaler'));
+        const list = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          name:
+            doc.data().tradeName ||
+            doc.data().businessOwnerName ||
+            doc.id,
+        }));
+        setWholesalers(list);
+      } catch (err) {
+        setMessage('Error fetching wholesalers');
+      }
+    };
+    fetchWholesalers();
+  }, []);
+
+  const handleFileChange = (e) => {
+    setCsvFile(e.target.files[0]);
+  };
+
+  const handleDownloadTemplate = () => {
+    const csvHeader = 'productId,name,category,description,imageUrl,unit,pricePerUnit,stock,priceRanges\n';
+    const blob = new Blob([csvHeader], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'product_bulk_upload_template.csv';
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadFailed = () => {
+    if (!failedProducts.length) return;
+    const csv = Papa.unparse(failedProducts);
+    const blob = new Blob([csv], { type: 'text/csv' });
+    saveAs(blob, 'failed_products.csv');
+  };
+
+  const fetchAllowedValues = async () => {
+    const snap = await getDoc(doc(db, 'system_settings', 'product_field_settings'));
+    return snap.exists() ? snap.data() : { units: [], categories: [] };
+  };
+
+  const handleUpload = async () => {
+    const { units: allowedUnits, categories: allowedCategories } = await fetchAllowedValues();
+    if (!csvFile || !wholesalerId) {
+      setMessage('Please select a wholesaler and CSV file.');
+      return;
+    }
+    setUploading(true);
+    setMessage('');
+
+    // Get wholesaler info for top-level product reference
+    const selectedWholesaler = wholesalers.find(w => w.id === wholesalerId);
+    const wholesalerName = selectedWholesaler?.name || wholesalerId;
+
+    Papa.parse(csvFile, {
+      header: true,
+      complete: async (results) => {
+        const products = results.data;
+        let successCount = 0;
+        let errorCount = 0;
+        let failedRows = [];
+        for (const product of products) {
+          let errorMsg = '';
+          // Validate unit
+          if (!allowedUnits.includes(product.unit)) {
+            errorMsg = `Unit "${product.unit}" is not allowed`;
+          }
+          // Validate category
+          else if (!allowedCategories.includes(product.category)) {
+            errorMsg = `Category "${product.category}" is not allowed`;
+          }
+          // Validate required fields
+          else if (
+            !product.productId ||
+            !product.name ||
+            !product.category ||
+            !product.unit ||
+            !product.pricePerUnit ||
+            !product.stock
+          ) {
+            errorMsg = 'Missing required field(s)';
+          }
+          // Validate category: only text, uppercase, no extra spaces, must be allowed
+          else if (
+            typeof product.category !== 'string' ||
+            !/^[A-Za-z]+(?: [A-Za-z]+)*$/.test(product.category.trim()) ||
+            !allowedCategories.includes(product.category.trim().toUpperCase())
+          ) {
+            errorMsg = `Category "${product.category}" is not allowed or invalid format`;
+          }
+          // Validate description: only text
+          else if (
+            product.description &&
+            !/^[A-Za-z0-9\s.,'-]*$/.test(product.description)
+          ) {
+            errorMsg = 'Description must be text only';
+          }
+          // Validate unit: must be allowed
+          else if (!allowedUnits.includes(product.unit.trim().toUpperCase())) {
+            errorMsg = `Unit "${product.unit}" is not allowed`;
+          }
+          // Validate pricePerUnit: number, max 2 decimals
+          else if (
+            isNaN(product.pricePerUnit) ||
+            !/^\d+(\.\d{1,2})?$/.test(product.pricePerUnit)
+          ) {
+            errorMsg = 'pricePerUnit must be a number with up to 2 decimals';
+          }
+          // Validate stock: whole number only
+          else if (
+            isNaN(product.stock) ||
+            !/^\d+$/.test(product.stock)
+          ) {
+            errorMsg = 'Stock must be a whole number';
+          }
+          // Add more validations as needed...
+
+          if (errorMsg) {
+            errorCount++;
+            failedRows.push({ ...product, error: errorMsg });
+            continue;
+          }
+
+          // Parse priceRanges
+          let priceRanges = [];
+          if (product.priceRanges) {
+            try {
+              priceRanges = JSON.parse(product.priceRanges);
+              if (!Array.isArray(priceRanges)) throw new Error();
+            } catch {
+              priceRanges = product.priceRanges.split(',').map(pair => {
+                const [minQty, price] = pair.split(':');
+                return { minQty: Number(minQty), price: Number(price) };
+              });
+            }
+          }
+
+          const formattedProduct = {
+            productId: product.productId,
+            name: product.name,
+            category: product.category.trim().toUpperCase(),
+            description: product.description ? product.description.trim() : '',
+            imageUrl: product.imageUrl || '',
+            unit: product.unit.trim().toUpperCase(),
+            pricePerUnit: Number(Number(product.pricePerUnit).toFixed(2)),
+            stock: Number(product.stock),
+            priceRanges,
+            wholesalerId,
+            wholesalerName,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          try {
+            // Add to wholesaler's products subcollection
+            await addDoc(
+              collection(db, 'wholesaler', wholesalerId, 'products'),
+              formattedProduct
+            );
+            // Add to top-level products collection
+            await addDoc(
+              collection(db, 'products'),
+              formattedProduct
+            );
+            successCount++;
+          } catch (err) {
+            errorCount++;
+            failedRows.push({ ...product, error: 'Firestore upload failed' });
+          }
+        }
+        setFailedProducts(failedRows);
+        setMessage(
+          errorCount === 0
+            ? `Upload complete: ${successCount} products added.`
+            : `Upload complete: ${successCount} products added, ${errorCount} errors.`
+        );
+        setUploading(false);
+      },
+      error: () => {
+        setMessage('Error parsing CSV file.');
+        setUploading(false);
+      },
+    });
+  };
+
+  return (
+    <Box sx={{ p: 4 }}>
+      <Paper sx={{ p: 4, mb: 4 }}>
+        <Typography variant="h5" sx={{ mb: 2, fontWeight: 'bold' }}>
+          Product Bulk Upload
+        </Typography>
+        <Typography sx={{ mb: 2 }}>
+          Upload a CSV file to add multiple products for a selected wholesaler in
+          one go.
+        </Typography>
+        <FormControl fullWidth sx={{ mb: 2 }}>
+          <InputLabel>Select Wholesaler</InputLabel>
+          <Select
+            value={wholesalerId}
+            label="Select Wholesaler"
+            onChange={(e) => setWholesalerId(e.target.value)}
+          >
+            {wholesalers.map((w) => (
+              <MenuItem key={w.id} value={w.id}>
+                {w.name}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+          <Button
+            variant="text"
+            color="secondary"
+            size="small"
+            onClick={handleDownloadTemplate}
+            sx={{ minWidth: 0, p: 0, textTransform: 'none' }}
+          >
+            Download Template CSV
+          </Button>
+          <label htmlFor="csv-upload">
+            <input
+              id="csv-upload"
+              type="file"
+              accept=".csv"
+              onChange={handleFileChange}
+              style={{ display: 'none' }}
+            />
+            <Button
+              variant="contained"
+              component="span"
+              size="small"
+              sx={{ minWidth: 120, textTransform: 'none' }}
+            >
+              Choose File
+            </Button>
+          </label>
+          {csvFile && (
+            <Box sx={{ display: 'flex', alignItems: 'center', ml: 1 }}>
+              <Typography variant="body2">{csvFile.name}</Typography>
+              <Button
+                size="small"
+                color="error"
+                sx={{ ml: 1, minWidth: 0, p: 0, textTransform: 'none' }}
+                onClick={() => setCsvFile(null)}
+              >
+                Remove
+              </Button>
+            </Box>
+          )}
+        </Box>
+        <Button
+          variant="contained"
+          color="primary"
+          disabled={uploading}
+          onClick={handleUpload}
+        >
+          {uploading ? 'Uploading...' : 'Upload Products'}
+        </Button>
+        {message && (
+          <Alert
+            severity={message.includes('error') || failedProducts.length ? 'error' : 'success'}
+            sx={{
+              mt: 2,
+              backgroundColor:
+                message.includes('error') || failedProducts.length
+                  ? '#f44336'
+                  : '#4caf50',
+              color: '#fff',
+              fontWeight: 'bold',
+            }}
+          >
+            {message}
+            {failedProducts.length > 0 && (
+              <Button
+                variant="contained"
+                size="small"
+                sx={{ ml: 2, backgroundColor: '#fff', color: '#f44336', fontWeight: 'bold' }}
+                onClick={handleDownloadFailed}
+              >
+                Download Failed Products
+              </Button>
+            )}
+          </Alert>
+        )}
+        <Box sx={{ mt: 3 }}>
+          <Typography variant="body2" color="text.secondary">
+            CSV columns must match the template:{' '}
+            <b>productId, name, category, description, imageUrl, unit, pricePerUnit, stock, priceRanges</b><br />
+            <b>priceRanges</b> example: <code>[{"{"}minQty:1,price:5{"}"},{"{"}minQty:10,price:4.5{"}"}]</code> or <code>1:5,10:4.5</code>
+          </Typography>
+        </Box>
+        {failedProducts.length > 0 && (
+          <Box sx={{ mt: 3 }}>
+            <Typography variant="subtitle1" sx={{ mb: 1 }}>
+              Failed Products
+            </Typography>
+            <Button
+              variant="outlined"
+              color="error"
+              size="small"
+              onClick={handleDownloadFailed}
+            >
+              Download Failed Products
+            </Button>
+            <Box sx={{ maxHeight: 300, overflowY: 'auto', mt: 1 }}>
+              {failedProducts.map((product, index) => (
+                <Box
+                  key={index}
+                  sx={{
+                    p: 2,
+                    border: '1px solid',
+                    borderColor: 'error.main',
+                    borderRadius: 1,
+                    mb: 1,
+                    backgroundColor: 'rgba(255, 0, 0, 0.1)',
+                  }}
+                >
+                  <Typography variant="body2">
+                    {product.productId} - {product.name}
+                  </Typography>
+                  <Typography variant="caption" color="error.main">
+                    {product.error}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+          </Box>
+        )}
+      </Paper>
+    </Box>
+  );
+};
+
+export default ProductBulkUpload;

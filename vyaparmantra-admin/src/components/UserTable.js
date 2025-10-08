@@ -47,13 +47,28 @@ const UserTable = () => {
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      const usersSnapshot = await getDocs(collection(db, 'users'));
-      const usersData = usersSnapshot.docs.map(doc => ({
+
+      // Fetch wholesalers
+      const wholesalerSnapshot = await getDocs(collection(db, 'wholesaler'));
+      const wholesalers = wholesalerSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
+        userType: 'wholesale',
         createdAt: doc.data().createdAt?.toDate?.()?.toLocaleDateString() || 'N/A',
         status: doc.data().status || 'active'
       }));
+
+      // Fetch retailers
+      const retailerSnapshot = await getDocs(collection(db, 'retailer'));
+      const retailers = retailerSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        userType: 'retail',
+        createdAt: doc.data().createdAt?.toDate?.()?.toLocaleDateString() || 'N/A',
+        status: doc.data().status || 'active'
+      }));
+
+      const usersData = [...wholesalers, ...retailers];
 
       setUsers(usersData);
       setFilteredUsers(usersData);
@@ -71,7 +86,9 @@ const UserTable = () => {
 
   const handleUpdateUser = async (updatedData) => {
     try {
-      await updateDoc(doc(db, 'users', selectedUser.id), updatedData);
+      // Update in correct collection
+      const collectionName = updatedData.userType === 'wholesale' ? 'wholesaler' : 'retailer';
+      await updateDoc(doc(db, collectionName, selectedUser.id), updatedData);
       setOpenModal(false);
       fetchUsers();
     } catch (error) {

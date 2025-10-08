@@ -16,19 +16,21 @@ import {
   Business as BusinessIcon,
   Analytics as AnalyticsIcon,
 } from '@mui/icons-material';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 
 const drawerWidth = 280;
 
 const Sidebar = () => {
   const location = useLocation();
-  const navigate = useNavigate();
 
   const menuItems = [
     { id: '/dashboard', label: 'Dashboard', icon: <DashboardIcon /> },
     { id: '/users', label: 'Users Management', icon: <PeopleIcon /> },
     { id: '/business', label: 'Business Analytics', icon: <BusinessIcon /> },
     { id: '/reports', label: 'Reports', icon: <AnalyticsIcon /> },
+    { id: '/bulk-upload', label: 'Product Bulk Upload', icon: <BusinessIcon /> },
+    { id: '/field-settings', label: 'Product Field Settings', icon: <BusinessIcon /> },
   ];
 
   return (
@@ -70,7 +72,8 @@ const Sidebar = () => {
         {menuItems.map((item) => (
           <ListItem key={item.id} disablePadding sx={{ mb: 1 }}>
             <ListItemButton
-              onClick={() => navigate(item.id)}
+              component={Link}
+              to={item.id}
               selected={location.pathname === item.id}
               sx={{
                 mx: 1,
