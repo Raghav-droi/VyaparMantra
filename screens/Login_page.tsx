@@ -11,10 +11,8 @@ import {
   Animated,
   Alert,
   StyleSheet,
-  Keyboard,
-  TouchableWithoutFeedback,
 } from 'react-native';
-import auth from '@react-native-firebase/auth';
+import auth, { getAuth } from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
 import CryptoJS from 'crypto-js';
 import {
@@ -38,9 +36,10 @@ export function WholesalerLoginPage({ navigation }: any) {
   const [currentStep, setCurrentStep] = useState<LoginStep>('method');
   const [loginMethod, setLoginMethod] = useState<LoginMethod>('password');
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [passwordPhone, setPasswordPhone] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [otp, setOtp] = useState('');
+  const [otpPhone, setOtpPhone] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [otpTimer, setOtpTimer] = useState(30);
   const [canResendOtp, setCanResendOtp] = useState(false);
@@ -77,9 +76,8 @@ export function WholesalerLoginPage({ navigation }: any) {
     }
     setIsLoading(true);
     try {
-      // Call your Firebase Function for password login
       const response = await fetch(
-        'https://us-central1-vm-authentication-4d4ea.cloudfunctions.net/loginWithPassword',
+        'https://asia-south1-vm-authentication-4d4ea.cloudfunctions.net/loginWithPassword',
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -118,12 +116,12 @@ export function WholesalerLoginPage({ navigation }: any) {
         setIsLoading(false);
         return;
       }
-      const confirmationResult = await auth().signInWithPhoneNumber('+91' + phoneNumber);
+      const confirmationResult = await getAuth().signInWithPhoneNumber('+91' + phoneNumber);
       setConfirmation(confirmationResult);
       setCurrentStep('otp');
       setOtpTimer(30);
       setCanResendOtp(false);
-      setOtp('');
+      setOtpPhone('');
       Alert.alert('OTP Sent', 'Check your SMS for the OTP');
     } catch (err) {
       Alert.alert('Error', 'Failed to send OTP');
@@ -132,7 +130,7 @@ export function WholesalerLoginPage({ navigation }: any) {
   };
 
   const handleVerifyOtp = async () => {
-    if (otp.length !== 6) {
+    if (otpPhone.length !== 6) {
       Alert.alert('Error', 'Enter the complete 6-digit OTP');
       return;
     }
@@ -142,7 +140,7 @@ export function WholesalerLoginPage({ navigation }: any) {
     }
     setIsLoading(true);
     try {
-      await confirmation.confirm(otp);
+      await confirmation.confirm(otpPhone);
       setCurrentStep('success');
       setTimeout(() => {
         navigation.replace('WholesalerDashboard');
@@ -156,11 +154,11 @@ export function WholesalerLoginPage({ navigation }: any) {
   const handleResendOtp = async () => {
     setIsLoading(true);
     try {
-      const confirmationResult = await auth().signInWithPhoneNumber('+91' + phoneNumber);
+      const confirmationResult = await getAuth().signInWithPhoneNumber('+91' + phoneNumber);
       setConfirmation(confirmationResult);
       setOtpTimer(30);
       setCanResendOtp(false);
-      setOtp('');
+      setOtpPhone('');
       Alert.alert('OTP Sent', 'Check your SMS for the OTP');
     } catch (err) {
       Alert.alert('Error', 'Failed to resend OTP');
@@ -321,16 +319,65 @@ export function WholesalerLoginPage({ navigation }: any) {
   );
 
   const PhoneStep = () => (
-    <View style={{ padding: 20 }}>
-      <Text>Phone Number</Text>
-      <TextInput
-        value={phoneNumber}
-        onChangeText={(t) => setPhoneNumber(t.replace(/\D/g, '').slice(0, 10))}
-        keyboardType="number-pad"
-        placeholder="Enter 10-digit mobile number"
-        style={{ borderWidth: 1, borderColor: '#ccc', padding: 10, color: '#000' }}
-        maxLength={10}
-      />
+    <View style={styles.card}>
+      <View style={styles.cardBody}>
+        <View style={styles.headerCenter}>
+          <View style={styles.iconCircleGreen}>
+            <MessageSquare color="#16a34a" size={32} />
+          </View>
+          <Text style={styles.title}>Login with OTP</Text>
+          <Text style={styles.muted}>Enter your phone number to receive an OTP</Text>
+        </View>
+        <View>
+          <Text style={styles.label}>Phone Number</Text>
+          <View style={styles.phoneRow}>
+            <Text style={styles.prefix}>+91</Text>
+            <TextInput
+              value={phoneNumber}
+              onChangeText={(t) => setPhoneNumber(t.replace(/\D/g, '').slice(0, 10))}
+              keyboardType="number-pad"
+              placeholder="Enter 10-digit mobile number"
+              style={styles.phoneInput}
+              maxLength={10}
+              
+            />
+          </View>
+          {phoneNumber.length > 0 && phoneNumber.length !== 10 && (
+            <Text style={styles.errorText}>Please enter a valid 10-digit phone number</Text>
+          )}
+          <TouchableOpacity
+            onPress={handleSendOtp}
+            disabled={phoneNumber.length !== 10 || isLoading}
+            style={[
+              styles.primaryBtn,
+              (phoneNumber.length !== 10 || isLoading) && styles.btnDisabled,
+            ]}
+            activeOpacity={0.8}
+          >
+            {isLoading ? (
+              <View style={styles.btnContent}>
+                <RefreshCw size={18} color="#fff" style={{ marginRight: 8 }} />
+                <ActivityIndicator color="#fff" />
+                <Text style={styles.btnText}>  Sending OTP...</Text>
+              </View>
+            ) : (
+              <View style={styles.btnContent}>
+                <Text style={styles.btnText}>Send OTP</Text>
+                <ArrowRight size={18} color="#fff" style={{ marginLeft: 8 }} />
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
+        <TouchableOpacity
+          style={styles.outlineBtn}
+          onPress={() => setCurrentStep('method')}
+        >
+          <View style={styles.rowCenter}>
+            <ArrowLeft size={16} color="#111827" style={{ marginRight: 8 }} />
+            <Text style={styles.outlineText}>Back to Login Options</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -351,25 +398,25 @@ export function WholesalerLoginPage({ navigation }: any) {
           <View style={{ marginBottom: 12 }}>
             <Text style={styles.label}>Enter OTP</Text>
             <TextInput
-              value={otp}
-              onChangeText={(t) => setOtp(t.replace(/\D/g, '').slice(0, 6))}
+              value={otpPhone}
+              onChangeText={(t) => setOtpPhone(t.replace(/\D/g, '').slice(0, 6))}
               keyboardType="number-pad"
               placeholder="Enter 6-digit OTP"
               style={styles.otpInput}
               maxLength={6}
               textAlign="center"
             />
-            {otp.length > 0 && otp.length !== 6 && (
+            {otpPhone.length > 0 && otpPhone.length !== 6 && (
               <Text style={styles.errorText}>Please enter the complete 6-digit OTP</Text>
             )}
           </View>
           <View style={{ marginBottom: 12 }}>
             <TouchableOpacity
               onPress={handleVerifyOtp}
-              disabled={otp.length !== 6 || isLoading}
+              disabled={otpPhone.length !== 6 || isLoading}
               style={[
                 styles.primaryBtn,
-                (otp.length !== 6 || isLoading) && styles.btnDisabled,
+                (otpPhone.length !== 6 || isLoading) && styles.btnDisabled,
               ]}
               activeOpacity={0.8}
             >
@@ -416,7 +463,7 @@ export function WholesalerLoginPage({ navigation }: any) {
           style={styles.outlineBtn}
           onPress={() => {
             setCurrentStep('phone');
-            setOtp('');
+            setOtpPhone('');
             setOtpTimer(30);
             setCanResendOtp(false);
           }}
@@ -468,23 +515,21 @@ export function WholesalerLoginPage({ navigation }: any) {
         style={{ flex: 1 }}
         behavior={Platform.select({ ios: 'padding', android: undefined })}
       >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-          <View style={{ flex: 1 }}>
-            <View style={styles.bgLayer} />
-            <View style={styles.container}>
-              {currentStep === 'method' && <MethodStep />}
-              {currentStep === 'password' && <PasswordStep />}
-              {currentStep === 'phone' && <PhoneStep />}
-              {currentStep === 'otp' && <OtpStep />}
-              {currentStep === 'success' && <SuccessStep />}
-            </View>
-            {/* Decorative blobs */}
-            <View style={styles.blurA} />
-            <View style={styles.blurB} />
-            <View style={styles.blurC} />
-            <View style={styles.blurD} />
+        <View style={{ flex: 1 }}>
+          <View style={styles.bgLayer} />
+          <View style={styles.container}>
+            {currentStep === 'method' && <MethodStep />}
+            {currentStep === 'password' && <PasswordStep />}
+            {currentStep === 'phone' && <PhoneStep />}
+            {currentStep === 'otp' && <OtpStep />}
+            {currentStep === 'success' && <SuccessStep />}
           </View>
-        </TouchableWithoutFeedback>
+          {/* Decorative blobs */}
+          <View style={styles.blurA} />
+          <View style={styles.blurB} />
+          <View style={styles.blurC} />
+          <View style={styles.blurD} />
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

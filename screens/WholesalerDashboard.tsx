@@ -1,18 +1,20 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, TouchableOpacity, ActivityIndicator, Modal } from "react-native";
+import { View, Text, TouchableOpacity, ActivityIndicator, Modal, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import LinearGradient from "react-native-linear-gradient";
 import { 
   Bell, Shield, ShoppingCart, Clock, DollarSign, Package, CheckCircle, X, ArrowRight, ChevronLeft, ChevronRight, TrendingUp, Home, Settings, CreditCard, LogOut, Plus
 } from "lucide-react-native";
-import auth from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
+import { getAuth } from '@react-native-firebase/auth';
+import { getFirestore, doc, getDoc } from '@react-native-firebase/firestore';
+const db = getFirestore();
 
 const WholesalerDashboard = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [tradeName, setTradeName] = useState("--");
   const [currentOrderPage, setCurrentOrderPage] = useState(1);
-  const user = auth().currentUser;
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const user = getAuth().currentUser;
 
   // Mock data for demonstration
   const mockStats = {
@@ -42,8 +44,9 @@ const WholesalerDashboard = ({ navigation }) => {
     if (!user?.phoneNumber) return;
     const fetchProfile = async () => {
       try {
-        const userSnap = await firestore().collection('wholesaler').doc(user.phoneNumber.replace('+91', '')).get();
-        if (userSnap.exists && userSnap.data().userType === "wholesale") {
+        const userDocRef = doc(db, 'wholesaler', user.phoneNumber.replace('+91', ''));
+        const userSnap = await getDoc(userDocRef);
+        if (userSnap.exists() && userSnap.data().userType === "wholesale") {
           setTradeName(userSnap.data().tradeName || "--");
         } else {
           setTradeName("--");
@@ -81,7 +84,11 @@ const WholesalerDashboard = ({ navigation }) => {
         <TouchableOpacity
           style={{ marginTop: 20, alignSelf: 'center', backgroundColor: '#FF8C00', padding: 12, borderRadius: 8 }}
           onPress={async () => {
-            await auth().signOut();
+            await getAuth().signOut();
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'Home' }],
+            });
           }}
         >
           <Text style={{ color: '#fff', fontWeight: 'bold' }}>Go to Login</Text>
@@ -93,7 +100,7 @@ const WholesalerDashboard = ({ navigation }) => {
   return (
     <SafeAreaView style={{ flex: 1 }}>
       <LinearGradient colors={["#fb923c", "#fbbf24", "#fde047"]} style={{ position: "absolute", width: "100%", height: "100%" }} />
-      <View style={{ padding: 10, paddingTop: 40, flex: 1 }}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 10, paddingTop: 40 }}>
         {/* Top Bar */}
         <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 10 }}>
           <TouchableOpacity style={{ flexDirection: "row", alignItems: "center" }} onPress={() => setSidebarOpen(true)}>
@@ -262,7 +269,7 @@ const WholesalerDashboard = ({ navigation }) => {
           </View>
           <Shield stroke="#bae6fd" width={32} height={32} />
         </View>
-      </View>
+      </ScrollView>
 
       {/* Bottom Navigation */}
       <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, backgroundColor: "#fff", borderTopWidth: 1, borderTopColor: "#ddd", flexDirection: "row", justifyContent: "space-around", paddingVertical: 10, zIndex: 10 }}>
@@ -315,7 +322,12 @@ const WholesalerDashboard = ({ navigation }) => {
               <Text style={{ color: "#fff", fontWeight: "bold", marginLeft: 10, fontSize: 15 }}>Add New Product</Text>
             </TouchableOpacity>
             {/* Add more sidebar options as needed */}
-            <TouchableOpacity style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 10, paddingVertical: 12, paddingHorizontal: 18, marginTop: 10 }} onPress={() => setSidebarOpen(false)}>
+            <TouchableOpacity style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 10, paddingVertical: 12, paddingHorizontal: 18, marginTop: 10 }} onPress={async () => {
+              setSidebarOpen(false);
+              await getAuth().signOut();
+              // REMOVE navigation.replace('Home');
+              // No navigation needed here!
+            }}>
               <LogOut stroke="#D14343" width={18} />
               <Text style={{ color: "#D14343", fontWeight: "bold", marginLeft: 10, fontSize: 15 }}>Sign Out</Text>
             </TouchableOpacity>

@@ -1,41 +1,15 @@
-/**
- * Import function triggers from their respective submodules:
- *
- * const {onCall} = require("firebase-functions/v2/https");
- * const {onDocumentWritten} = require("firebase-functions/v2/firestore");
- *
- * See a full list of supported triggers at https://firebase.google.com/docs/functions
- */
-
-const {setGlobalOptions} = require("firebase-functions");
-const {onRequest} = require("firebase-functions/https");
-const logger = require("firebase-functions/logger");
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 const CryptoJS = require('crypto-js');
+const express = require('express');
+
 admin.initializeApp();
 
-// For cost control, you can set the maximum number of containers that can be
-// running at the same time. This helps mitigate the impact of unexpected
-// traffic spikes by instead downgrading performance. This limit is a
-// per-function limit. You can override the limit for each function using the
-// `maxInstances` option in the function's options, e.g.
-// `onRequest({ maxInstances: 5 }, (req, res) => { ... })`.
-// NOTE: setGlobalOptions does not apply to functions using the v1 API. V1
-// functions should each use functions.runWith({ maxInstances: 10 }) instead.
-// In the v1 API, each function can only serve one request per container, so
-// this will be the maximum concurrent request count.
-setGlobalOptions({ maxInstances: 10 });
+const app = express();
+app.use(express.json());
 
-// Create and deploy your first functions
-// https://firebase.google.com/docs/functions/get-started
-
-// exports.helloWorld = onRequest((request, response) => {
-//   logger.info("Hello logs!", {structuredData: true});
-//   response.send("Hello from Firebase!");
-// });
-
-exports.loginWithPassword = functions.https.onRequest(async (req, res) => {
+// Enable CORS preflight requests and set allowed origin for all requests
+app.use((req, res, next) => {
   res.set('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') {
     res.set('Access-Control-Allow-Methods', 'POST');
@@ -43,18 +17,45 @@ exports.loginWithPassword = functions.https.onRequest(async (req, res) => {
     res.status(204).send('');
     return;
   }
+  next();
+});
 
+app.post('/', async (req, res) => {
   const { phone, password } = req.body;
-  if (!phone || !password) return res.status(400).send('Missing phone or password');
+
+  console.log(`Login attempt for phone: ${phone}`);
+
+  if (!phone || !password) {
+    res.status(400).send('Missing phone or password');
+    return;
+  }
+
   try {
     const userDoc = await admin.firestore().collection('wholesaler').doc(phone).get();
-    if (!userDoc.exists) return res.status(401).send('User not found');
+
+    if (!userDoc.exists) {
+      res.status(401).send('User not found');
+      return;
+    }
+
     const hashedPassword = userDoc.data().password;
     const hashedInput = CryptoJS.SHA256(password).toString();
-    if (hashedInput !== hashedPassword) return res.status(401).send('Incorrect password');
+
+    if (hashedInput !== hashedPassword) {
+      res.status(401).send('Incorrect password');
+      return;
+    }
+
     const token = await admin.auth().createCustomToken(phone);
+
+    console.log(`Login successful for phone: ${phone}`);
+
     res.json({ token });
   } catch (err) {
+    console.error(`Server error for phone: ${phone}`, err);
     res.status(500).send('Server error');
   }
 });
+
+// Export the function specifying region for deployment
+exports.loginWithPassword = functions.region('asia-south1').https.onRequest(app);
