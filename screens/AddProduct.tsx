@@ -100,10 +100,11 @@ export default function AddProductPage() {
         await setDoc(productRef, {
           productName: form.productName,
           brand: form.brand,
-          category: form.category,
+          category: form.category.trim().toUpperCase(),
           description: form.description,
           unit: form.unit,
           image: form.image,
+          searchName: form.productName.trim().toUpperCase(),
           createdAt: Timestamp.now(),
           updatedAt: Timestamp.now(),
         });
@@ -139,6 +140,8 @@ export default function AddProductPage() {
         tags,
         images: productImages,
         description: form.description,
+        unit: form.unit,
+        pricePerUnit: priceTiers[0]?.pricePerUnit || 0,
       });
 
       Alert.alert('Success', 'Product added successfully!');

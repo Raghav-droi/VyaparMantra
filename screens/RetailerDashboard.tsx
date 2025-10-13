@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,194 +9,262 @@ import {
   SafeAreaView,
   FlatList,
   Alert,
+  TextInput,
+  ActivityIndicator,
 } from 'react-native';
-import { LogOut, Home, ShoppingCart, Clock, Truck, Settings, X, Star, Heart, User, CreditCard } from 'lucide-react-native';
+import { LogOut, Home, ShoppingCart, Clock, Truck, Settings, X, Star, Heart, User, CreditCard, Search, Filter, Plus } from 'lucide-react-native';
 import { getAuth } from '@react-native-firebase/auth';
-import { getFirestore, doc, getDoc } from '@react-native-firebase/firestore';
+import firestore from '@react-native-firebase/firestore';
 
-const db = getFirestore();
-
-const mockCategories = [
-  'All Categories',
-  'Grains & Cereals',
-  'Vegetables',
-  'Fruits',
-  'Dairy Products',
-  'Oil & Spices',
-  'Beverages',
-  'Snacks',
-  'Meat & Poultry',
-  'Frozen Foods',
-];
-
-const mockProducts = [
-  {
-    id: '1',
-    name: 'Premium Basmati Rice',
-    category: 'Grains & Cereals',
-    image: '🌾',
-    rating: 4.5,
-    reviewCount: 128,
-    inStock: true,
-    wholesalers: [
-      { name: 'Wholesale Central', price: 120, location: '2.5 km', rating: 4.8 },
-      { name: 'Global Foods Ltd', price: 115, location: '5.1 km', rating: 4.6 },
-      { name: 'Grain Masters', price: 125, location: '3.2 km', rating: 4.7 },
-    ],
-  },
-  {
-    id: '2', 
-    name: 'Fresh Vegetables Mix',
-    category: 'Vegetables',
-    image: '🥬',
-    rating: 4.2,
-    reviewCount: 89,
-    inStock: true,
-    wholesalers: [
-      { name: 'Farm Fresh Co', price: 80, location: '1.8 km', rating: 4.5 },
-      { name: 'Green Valley', price: 75, location: '4.2 km', rating: 4.3 }
-    ]
-  },
-  {
-    id: '3',
-    name: 'Refined Cooking Oil',
-    category: 'Oil & Spices', 
-    image: '🛢️',
-    rating: 4.7,
-    reviewCount: 203,
-    inStock: false,
-    wholesalers: [
-      { name: 'Oil Masters', price: 150, location: '3.5 km', rating: 4.9 },
-      { name: 'Pure Oils Inc', price: 145, location: '6.8 km', rating: 4.6 }
-    ]
-  }
-];
-
-const mockWholesalers = [
-  {
-    id: '1',
-    name: 'Wholesale Central', 
-    location: 'Mumbai, Maharashtra',
-    distance: '2.5 km',
-    rating: 4.8,
-    reviewCount: 245,
-    productCount: 127,
-    verified: true,
-    specialties: ['Grains', 'Oil & Spices']
-  },
-  {
-    id: '2',
-    name: 'Farm Fresh Co',
-    location: 'Pune, Maharashtra', 
-    distance: '1.8 km',
-    rating: 4.5,
-    reviewCount: 189,
-    productCount: 89,
-    verified: true,
-    specialties: ['Vegetables', 'Fruits']
-  },
-  {
-    id: '3',
-    name: 'Global Foods Ltd',
-    location: 'Delhi, NCR',
-    distance: '5.1 km', 
-    rating: 4.6,
-    reviewCount: 156,
-    productCount: 203,
-    verified: false,
-    specialties: ['Grains', 'Beverages']
-  }
-];
-
-const mockCartItems = [
-  {
-    id: '1',
-    productName: 'Premium Basmati Rice',
-    wholesalerName: 'Wholesale Central',
-    price: 120,
-    quantity: 50,
-    unit: 'kg',
-    status: 'confirmed'
-  },
-  {
-    id: '2', 
-    productName: 'Fresh Vegetables Mix',
-    wholesalerName: 'Farm Fresh Co',
-    price: 80,
-    quantity: 25,
-    unit: 'kg', 
-    status: 'pending'
-  },
-  {
-    id: '3',
-    productName: 'Refined Cooking Oil',
-    wholesalerName: 'Oil Masters',
-    price: 150,
-    quantity: 10,
-    unit: 'L',
-    status: 'confirmed'
-  }
-];
-
-const mockOrders = [
-  {
-    id: 'ORD001',
-    date: '2024-01-15',
-    total: 8750,
-    status: 'delivered',
-    wholesaler: 'Wholesale Central',
-    items: ['Rice 50kg', 'Oil 10L'],
-    deliveryDate: '2024-01-18'
-  },
-  {
-    id: 'ORD002', 
-    date: '2024-01-14',
-    total: 2250,
-    status: 'shipped',
-    wholesaler: 'Farm Fresh Co',
-    items: ['Vegetables 30kg'],
-    deliveryDate: '2024-01-16'
-  },
-  {
-    id: 'ORD003',
-    date: '2024-01-13', 
-    total: 1500,
-    status: 'confirmed',
-    wholesaler: 'Oil Masters',
-    items: ['Oil 5L', 'Spices 2kg']
-  }
-];
+const db = firestore();
 
 type Screen = 'home' | 'productResults' | 'wholesalerResults' | 'cart' | 'confirmation' | 'payment' | 'tracking';
 
-export default function RetailerDashboard({ navigation }) {
+// Type definitions for dynamic data
+interface Product {
+  id: string;
+  productId: string;
+  name: string;
+  category: string;
+  unit: string;
+  image?: string;
+  searchName: string;
+  createdAt: any;
+}
+
+interface WholesalerProduct {
+  id: string;
+  wholesalerId: string;
+  wholesalerName: string;
+  productId: string;
+  pricePerUnit: number;
+  priceTiers: Array<{ minQty: number; maxQty: number; pricePerUnit: number }>;
+  available: boolean;
+  unit: string;
+  rating?: number;
+  deliveryArea: string[];
+}
+
+interface CartItem {
+  id: string;
+  productId: string;
+  productName: string;
+  wholesalerId: string;
+  wholesalerName: string;
+  pricePerUnit: number;
+  quantity: number;
+  unit: string;
+  status: 'pending' | 'confirmed' | 'rejected';
+  createdAt: any;
+}
+
+interface Order {
+  id: string;
+  productId: string;
+  productName: string;
+  wholesalerId: string;
+  wholesalerName: string;
+  retailerId: string;
+  qty: number;
+  unit: string;
+  pricePerUnit: number;
+  status: 'requested' | 'confirmed' | 'shipped' | 'delivered';
+  createdAt: any;
+  updatedAt: any;
+}
+
+export default function RetailerDashboard({ navigation }: { navigation: any }) {
   const [currentScreen, setCurrentScreen] = useState<Screen>('home');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [cartItems, setCartItems] = useState(mockCartItems);
+  
+  // Dynamic data state
+  const [categories, setCategories] = useState<string[]>(['All Categories']);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [wholesalerProducts, setWholesalerProducts] = useState<WholesalerProduct[]>([]);
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  
+  // UI state
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('All Categories');
+  const [sortByPrice, setSortByPrice] = useState(false);
+  const [sortByRating, setSortByRating] = useState(false);
+  const [within5km, setWithin5km] = useState(false);
+  
+  // User data
   const [retailerName, setRetailerName] = useState('--');
   const [retailerLocation, setRetailerLocation] = useState('--');
+  const [error, setError] = useState<string | null>(null);
   const user = getAuth().currentUser;
 
+  // Debug logging
+  console.log('RetailerDashboard rendered:', {
+    currentScreen,
+    user: user?.phoneNumber,
+    loading,
+    error,
+    productsCount: products.length,
+    categoriesCount: categories.length
+  });
+
+  // Fetch retailer profile data
   useEffect(() => {
     if (!user?.phoneNumber) return;
     const fetchProfile = async () => {
       try {
-        const userDocRef = doc(db, 'retailer', user.phoneNumber.replace('+91', ''));
-        const userSnap = await getDoc(userDocRef);
-        if (userSnap.exists()) {
-          setRetailerName(userSnap.data().storeName || '--');
-          setRetailerLocation(userSnap.data().location || '--');
-        } else {
-          setRetailerName('--');
-          setRetailerLocation('--');
+        const retailerId = user.phoneNumber?.replace('+91', '');
+        if (!retailerId) return;
+        const userDoc = await db.collection('retailer').doc(retailerId).get();
+        if (userDoc.exists()) {
+          const data = userDoc.data();
+          setRetailerName(data?.storeName || data?.businessOwnerName || '--');
+          setRetailerLocation(data?.location || '--');
         }
       } catch (err) {
-        setRetailerName('--');
-        setRetailerLocation('--');
+        console.error('Error fetching profile:', err);
       }
     };
     fetchProfile();
   }, [user]);
+
+  // Fetch categories dynamically
+  const fetchCategories = useCallback(async () => {
+    try {
+      console.log('Fetching categories...');
+      const categoriesSnapshot = await db.collection('products').get();
+      const uniqueCategories = new Set<string>();
+      uniqueCategories.add('All Categories');
+      
+      categoriesSnapshot.docs.forEach(doc => {
+        const category = doc.data().category;
+        if (category) uniqueCategories.add(category);
+      });
+      
+      setCategories(Array.from(uniqueCategories));
+      console.log('Categories fetched successfully:', Array.from(uniqueCategories));
+    } catch (err) {
+      console.error('Error fetching categories:', err);
+      setError('Failed to load categories');
+    }
+  }, []);
+
+  // Fetch products dynamically
+  const fetchProducts = useCallback(async () => {
+    try {
+      console.log('Fetching products...');
+      setLoading(true);
+      setError(null);
+      let query = db.collection('products');
+      
+      // Apply category filter
+      if (selectedCategory !== 'All Categories') {
+        query = query.where('category', '==', selectedCategory) as any;
+      }
+      
+      // Apply search filter
+      if (searchQuery.trim()) {
+        const searchTerm = searchQuery.trim().toUpperCase();
+        query = query.where('searchName', '>=', searchTerm)
+                    .where('searchName', '<=', searchTerm + '\uf8ff') as any;
+      }
+      
+      const snapshot = await query.limit(50).get();
+      const productsList: Product[] = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Product[];
+      
+      setProducts(productsList);
+      console.log('Products fetched successfully:', productsList.length);
+    } catch (err) {
+      console.error('Error fetching products:', err);
+      setError('Failed to load products');
+      setProducts([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedCategory, searchQuery]);
+
+  // Fetch wholesaler products for price comparison
+  const fetchWholesalerProducts = useCallback(async (productIds: string[]) => {
+    if (productIds.length === 0) return;
+    
+    try {
+      const snapshot = await db.collection('wholesalerProducts')
+        .where('productId', 'in', productIds)
+        .where('available', '==', true)
+        .get();
+      
+      const wholesalerProductsList: WholesalerProduct[] = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as WholesalerProduct[];
+      
+      setWholesalerProducts(wholesalerProductsList);
+    } catch (err) {
+      console.error('Error fetching wholesaler products:', err);
+    }
+  }, []);
+
+  // Fetch cart items
+  const fetchCartItems = useCallback(async () => {
+    if (!user?.phoneNumber) return;
+    
+    try {
+      const retailerId = user.phoneNumber.replace('+91', '');
+      const snapshot = await db.collection('cart')
+        .where('retailerId', '==', retailerId)
+        .orderBy('createdAt', 'desc')
+        .get();
+      
+      const cartItemsList: CartItem[] = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as CartItem[];
+      
+      setCartItems(cartItemsList);
+    } catch (err) {
+      console.error('Error fetching cart items:', err);
+    }
+  }, [user]);
+
+  // Fetch orders
+  const fetchOrders = useCallback(async () => {
+    if (!user?.phoneNumber) return;
+    
+    try {
+      const retailerId = user.phoneNumber.replace('+91', '');
+      const snapshot = await db.collection('orders')
+        .where('retailerId', '==', retailerId)
+        .orderBy('createdAt', 'desc')
+        .limit(20)
+        .get();
+      
+      const ordersList: Order[] = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Order[];
+      
+      setOrders(ordersList);
+    } catch (err) {
+      console.error('Error fetching orders:', err);
+    }
+  }, [user]);
+
+  // Initial data load
+  useEffect(() => {
+    fetchCategories();
+    fetchProducts();
+    fetchCartItems();
+    fetchOrders();
+  }, [fetchCategories, fetchProducts, fetchCartItems, fetchOrders]);
+
+  // Update wholesaler products when products change
+  useEffect(() => {
+    const productIds = products.map(p => p.productId);
+    fetchWholesalerProducts(productIds);
+  }, [products, fetchWholesalerProducts]);
 
   // Navigation function
   const navigateToScreen = (screen: Screen) => {
@@ -204,12 +272,138 @@ export default function RetailerDashboard({ navigation }) {
     setSidebarOpen(false);
   };
 
+  // Add to cart function
+  const addToCart = async (productId: string, wholesalerId: string, pricePerUnit: number) => {
+    if (!user?.phoneNumber) {
+      Alert.alert('Error', 'Please login to add items to cart');
+      return;
+    }
+
+    try {
+      const retailerId = user.phoneNumber.replace('+91', '');
+      const product = products.find(p => p.productId === productId);
+      const wholesalerProduct = wholesalerProducts.find(wp => 
+        wp.productId === productId && wp.wholesalerId === wholesalerId
+      );
+
+      if (!product || !wholesalerProduct) {
+        Alert.alert('Error', 'Product or wholesaler not found');
+        return;
+      }
+
+      // Check if item already exists in cart
+      const existingItem = cartItems.find(item => 
+        item.productId === productId && item.wholesalerId === wholesalerId
+      );
+
+      if (existingItem) {
+        Alert.alert('Already in Cart', 'This item is already in your cart');
+        return;
+      }
+
+      const cartItem = {
+        productId,
+        productName: product.name,
+        wholesalerId,
+        wholesalerName: wholesalerProduct.wholesalerName,
+        pricePerUnit,
+        quantity: wholesalerProduct.priceTiers[0]?.minQty || 1,
+        unit: product.unit,
+        status: 'pending' as const,
+        retailerId,
+        createdAt: firestore.FieldValue.serverTimestamp(),
+      };
+
+      await db.collection('cart').add(cartItem);
+      await fetchCartItems(); // Refresh cart
+      Alert.alert('Success', 'Item added to cart');
+    } catch (err) {
+      console.error('Error adding to cart:', err);
+      Alert.alert('Error', 'Failed to add item to cart');
+    }
+  };
+
+  // Remove from cart function
+  const removeFromCart = async (cartItemId: string) => {
+    try {
+      await db.collection('cart').doc(cartItemId).delete();
+      await fetchCartItems(); // Refresh cart
+      Alert.alert('Success', 'Item removed from cart');
+    } catch (err) {
+      console.error('Error removing from cart:', err);
+      Alert.alert('Error', 'Failed to remove item from cart');
+    }
+  };
+
+  // Request confirmation for cart items
+  const requestConfirmation = async () => {
+    if (cartItems.length === 0) {
+      Alert.alert('Empty Cart', 'Your cart is empty');
+      return;
+    }
+
+    try {
+      const retailerId = user?.phoneNumber?.replace('+91', '');
+      if (!retailerId) return;
+
+      // Create orders for each cart item
+      const orderPromises = cartItems.map(async (item) => {
+        const orderData = {
+          productId: item.productId,
+          productName: item.productName,
+          wholesalerId: item.wholesalerId,
+          wholesalerName: item.wholesalerName,
+          retailerId,
+          qty: item.quantity,
+          pricePerUnit: item.pricePerUnit,
+          status: 'requested' as const,
+          createdAt: firestore.FieldValue.serverTimestamp(),
+          updatedAt: firestore.FieldValue.serverTimestamp(),
+        };
+        return db.collection('orders').add(orderData);
+      });
+
+      await Promise.all(orderPromises);
+      
+      // Clear cart after creating orders
+      const deletePromises = cartItems.map(item => 
+        db.collection('cart').doc(item.id).delete()
+      );
+      await Promise.all(deletePromises);
+      
+      await fetchCartItems();
+      await fetchOrders();
+      
+      Alert.alert('Success', 'Order requests sent to wholesalers');
+      navigateToScreen('confirmation');
+    } catch (err) {
+      console.error('Error requesting confirmation:', err);
+      Alert.alert('Error', 'Failed to send order requests');
+    }
+  };
+
   // Sidebar sign out
-  const handleLogout = () => {
+  const handleLogout = async () => {
     setSidebarOpen(false);
-    // Replace with your sign out logic
-    Alert.alert('Signed Out', 'You have been signed out.');
-    navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+    try {
+      await getAuth().signOut();
+      Alert.alert('Signed Out', 'You have been signed out.');
+      navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+    } catch (err) {
+      console.error('Error signing out:', err);
+    }
+  };
+
+  // Helper function to get wholesalers for a product
+  const getProductWholesalers = (productId: string) => {
+    return wholesalerProducts.filter(wp => wp.productId === productId);
+  };
+
+  // Helper function to get best price for a product
+  const getBestPrice = (productId: string) => {
+    const productWholesalers = getProductWholesalers(productId);
+    if (productWholesalers.length === 0) return null;
+    return Math.min(...productWholesalers.map(wp => wp.pricePerUnit));
   };
 
   // Screens
@@ -217,52 +411,252 @@ export default function RetailerDashboard({ navigation }) {
     <ScrollView contentContainerStyle={styles.screenContainer}>
       <Text style={styles.header}>Welcome, {retailerName}</Text>
       <Text style={styles.subHeader}>{retailerLocation}</Text>
-      <Text style={styles.sectionTitle}>Popular Categories</Text>
+      
+      {/* Error Display */}
+      {error && (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={() => {
+            setError(null);
+            fetchCategories();
+            fetchProducts();
+          }}>
+            <Text style={styles.retryBtnText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      
+      {/* Search Bar */}
+      <View style={styles.searchContainer}>
+        <View style={styles.searchInputContainer}>
+          <Search color="#666" size={20} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search products..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            onSubmitEditing={fetchProducts}
+          />
+        </View>
+        <TouchableOpacity style={styles.searchBtn} onPress={fetchProducts}>
+          <Text style={styles.searchBtnText}>Search</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.searchBtn, { backgroundColor: '#16a34a', marginLeft: 8 }]} 
+          onPress={() => navigation.navigate('SearchProducts')}
+        >
+          <Text style={styles.searchBtnText}>Browse All</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Categories */}
+      <Text style={styles.sectionTitle}>Categories</Text>
       <View style={styles.categoryRow}>
-        {mockCategories.slice(1, 5).map((cat) => (
-          <TouchableOpacity key={cat} style={styles.categoryBtn}>
-            <Text style={styles.categoryText}>{cat}</Text>
+        {categories.slice(1, 9).map((cat) => (
+          <TouchableOpacity 
+            key={cat} 
+            style={[styles.categoryBtn, selectedCategory === cat && styles.categoryBtnActive]}
+            onPress={() => {
+              setSelectedCategory(cat);
+              fetchProducts();
+            }}
+          >
+            <Text style={[styles.categoryText, selectedCategory === cat && styles.categoryTextActive]}>
+              {cat}
+            </Text>
           </TouchableOpacity>
         ))}
       </View>
-      <Text style={styles.sectionTitle}>Featured Products</Text>
-      <FlatList
-        data={mockProducts}
-        horizontal
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <View style={styles.productCard}>
-            <Text style={styles.productImage}>{item.image}</Text>
-            <Text style={styles.productName}>{item.name}</Text>
-            <Text style={styles.productCategory}>{item.category}</Text>
-            <Text style={styles.productRating}>⭐ {item.rating}</Text>
-            <TouchableOpacity style={styles.addCartBtn}>
-              <Text style={styles.addCartText}>Add to Cart</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      />
+
+      {/* Filters */}
+      <View style={styles.filtersContainer}>
+        <TouchableOpacity 
+          style={[styles.filterBtn, sortByPrice && styles.filterBtnActive]}
+          onPress={() => setSortByPrice(!sortByPrice)}
+        >
+          <Text style={[styles.filterText, sortByPrice && styles.filterTextActive]}>Lowest Price</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.filterBtn, sortByRating && styles.filterBtnActive]}
+          onPress={() => setSortByRating(!sortByRating)}
+        >
+          <Text style={[styles.filterText, sortByRating && styles.filterTextActive]}>Top Rated</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Products */}
+      <Text style={styles.sectionTitle}>Available Products</Text>
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#1e3a8a" />
+          <Text style={styles.loadingText}>Loading products...</Text>
+        </View>
+      ) : products.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>No products found</Text>
+          <Text style={styles.emptySubText}>Try adjusting your search or category filter</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={products.slice(0, 10)}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => {
+            const productWholesalers = getProductWholesalers(item.productId);
+            const bestPrice = getBestPrice(item.productId);
+            
+            return (
+              <TouchableOpacity 
+                style={styles.productCard}
+                onPress={() => navigation.navigate('ProductDetails', { 
+                  productId: item.productId, 
+                  name: item.name 
+                })}
+              >
+                <Text style={styles.productImage}>{item.image || '📦'}</Text>
+                <Text style={styles.productName}>{item.name}</Text>
+                <Text style={styles.productCategory}>{item.category}</Text>
+                <Text style={styles.productUnit}>{item.unit}</Text>
+                {bestPrice && (
+                  <Text style={styles.productPrice}>From ₹{bestPrice}</Text>
+                )}
+                <Text style={styles.productOffers}>
+                  {productWholesalers.length} wholesaler{productWholesalers.length !== 1 ? 's' : ''}
+                </Text>
+                {productWholesalers.length > 0 && (
+                  <TouchableOpacity 
+                    style={styles.addCartBtn}
+                    onPress={() => {
+                      const bestWholesaler = productWholesalers.reduce((best, current) => 
+                        current.pricePerUnit < best.pricePerUnit ? current : best
+                      );
+                      addToCart(item.productId, bestWholesaler.wholesalerId, bestWholesaler.pricePerUnit);
+                    }}
+                  >
+                    <Text style={styles.addCartText}>Quick Add</Text>
+                  </TouchableOpacity>
+                )}
+              </TouchableOpacity>
+            );
+          }}
+          scrollEnabled={false}
+        />
+      )}
     </ScrollView>
   );
 
   const renderCartScreen = () => (
     <ScrollView contentContainerStyle={styles.screenContainer}>
       <Text style={styles.header}>My Cart</Text>
-      {cartItems.map((item) => (
-        <View key={item.id} style={styles.cartItem}>
-          <Text style={styles.cartProduct}>{item.productName}</Text>
-          <Text style={styles.cartWholesaler}>{item.wholesalerName}</Text>
-          <Text style={styles.cartQty}>Qty: {item.quantity} {item.unit}</Text>
-          <Text style={styles.cartPrice}>₹{item.price * item.quantity}</Text>
+      {cartItems.length === 0 ? (
+        <View style={styles.emptyCart}>
+          <Text style={styles.emptyCartText}>Your cart is empty</Text>
+          <TouchableOpacity style={styles.primaryBtn} onPress={() => navigateToScreen('home')}>
+            <Text style={styles.primaryBtnText}>Browse Products</Text>
+          </TouchableOpacity>
         </View>
-      ))}
-      <TouchableOpacity style={styles.primaryBtn} onPress={() => navigateToScreen('confirmation')}>
-        <Text style={styles.primaryBtnText}>Request Confirmation</Text>
-      </TouchableOpacity>
+      ) : (
+        <>
+          {cartItems.map((item) => (
+            <View key={item.id} style={styles.cartItem}>
+              <View style={styles.cartItemHeader}>
+                <Text style={styles.cartProduct}>{item.productName}</Text>
+                <TouchableOpacity onPress={() => removeFromCart(item.id)}>
+                  <X color="#dc2626" size={20} />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.cartWholesaler}>{item.wholesalerName}</Text>
+              <Text style={styles.cartQty}>Qty: {item.quantity} {item.unit}</Text>
+              <Text style={styles.cartPrice}>₹{item.pricePerUnit * item.quantity}</Text>
+              <View style={styles.cartStatusContainer}>
+                <View style={[styles.statusDot, { backgroundColor: 
+                  item.status === 'confirmed' ? '#16a34a' : 
+                  item.status === 'pending' ? '#fbbf24' : '#dc2626'
+                }]} />
+                <Text style={styles.cartStatus}>{item.status.charAt(0).toUpperCase() + item.status.slice(1)}</Text>
+              </View>
+            </View>
+          ))}
+          
+          <View style={styles.cartSummary}>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Subtotal:</Text>
+              <Text style={styles.summaryValue}>
+                ₹{cartItems.reduce((sum, item) => sum + (item.pricePerUnit * item.quantity), 0)}
+              </Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Delivery:</Text>
+              <Text style={styles.summaryValue}>₹50</Text>
+            </View>
+            <View style={[styles.summaryRow, styles.totalRow]}>
+              <Text style={styles.summaryLabel}>Total:</Text>
+              <Text style={styles.summaryValue}>
+                ₹{cartItems.reduce((sum, item) => sum + (item.pricePerUnit * item.quantity), 0) + 50}
+              </Text>
+            </View>
+          </View>
+          
+          <TouchableOpacity style={styles.primaryBtn} onPress={requestConfirmation}>
+            <Text style={styles.primaryBtnText}>Request Confirmation</Text>
+          </TouchableOpacity>
+        </>
+      )}
     </ScrollView>
   );
 
-  // ...add renderProductResults, renderWholesalerResults, renderConfirmationScreen, renderPaymentScreen, renderTrackingScreen as needed...
+  const renderTrackingScreen = () => (
+    <ScrollView contentContainerStyle={styles.screenContainer}>
+      <Text style={styles.header}>Order Tracking</Text>
+      {orders.length === 0 ? (
+        <View style={styles.emptyCart}>
+          <Text style={styles.emptyCartText}>No orders found</Text>
+          <TouchableOpacity style={styles.primaryBtn} onPress={() => navigateToScreen('home')}>
+            <Text style={styles.primaryBtnText}>Browse Products</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        orders.map((order) => (
+          <TouchableOpacity 
+            key={order.id} 
+            style={styles.orderCard}
+            onPress={() => navigation.navigate('OrderTracking', { orderId: order.id })}
+          >
+            <View style={styles.orderHeader}>
+              <Text style={styles.orderId}>Order #{order.id.slice(-8)}</Text>
+              <View style={[styles.statusBadge, { backgroundColor: 
+                order.status === 'delivered' ? '#16a34a' : 
+                order.status === 'shipped' ? '#2563eb' :
+                order.status === 'confirmed' ? '#fbbf24' : '#dc2626'
+              }]}>
+                <Text style={styles.statusBadgeText}>{order.status.charAt(0).toUpperCase() + order.status.slice(1)}</Text>
+              </View>
+            </View>
+            <Text style={styles.orderProduct}>{order.productName}</Text>
+            <Text style={styles.orderWholesaler}>{order.wholesalerName}</Text>
+            <View style={styles.orderDetails}>
+              <Text style={styles.orderQty}>{order.qty} {order.unit}</Text>
+              <Text style={styles.orderPrice}>₹{order.qty * order.pricePerUnit}</Text>
+            </View>
+            <Text style={styles.orderDate}>
+              Ordered: {order.createdAt?.toDate?.()?.toLocaleDateString() || 'Recently'}
+            </Text>
+          </TouchableOpacity>
+        ))
+      )}
+    </ScrollView>
+  );
+
+  // Show loading screen if user is not authenticated
+  if (!user) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#fbbf24' }}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#1e3a8a" />
+          <Text style={styles.loadingText}>Loading dashboard...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#fbbf24' }}>
@@ -281,7 +675,7 @@ export default function RetailerDashboard({ navigation }) {
       <View style={{ flex: 1 }}>
         {currentScreen === 'home' && renderHomeScreen()}
         {currentScreen === 'cart' && renderCartScreen()}
-        {/* Add other screens here */}
+        {currentScreen === 'tracking' && renderTrackingScreen()}
       </View>
 
       {/* Bottom Navigation */}
@@ -291,6 +685,9 @@ export default function RetailerDashboard({ navigation }) {
         </TouchableOpacity>
         <TouchableOpacity onPress={() => navigateToScreen('cart')}>
           <ShoppingCart color={currentScreen === 'cart' ? '#1e3a8a' : '#888'} size={28} />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => navigateToScreen('tracking')}>
+          <Truck color={currentScreen === 'tracking' ? '#1e3a8a' : '#888'} size={28} />
         </TouchableOpacity>
         <TouchableOpacity onPress={() => setSidebarOpen(true)}>
           <Settings color="#888" size={28} />
@@ -509,5 +906,256 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginLeft: 10,
     fontSize: 15,
+  },
+  // New styles for dynamic components
+  searchContainer: {
+    flexDirection: 'row',
+    marginBottom: 16,
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  searchInputContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    fontSize: 16,
+    color: '#111827',
+  },
+  searchBtn: {
+    backgroundColor: '#1e3a8a',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 10,
+    justifyContent: 'center',
+  },
+  searchBtnText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  filtersContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  filterBtn: {
+    backgroundColor: '#f3f4f6',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  filterBtnActive: {
+    backgroundColor: '#1e3a8a',
+    borderColor: '#1e3a8a',
+  },
+  filterText: {
+    color: '#374151',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  filterTextActive: {
+    color: '#fff',
+  },
+  categoryBtnActive: {
+    backgroundColor: '#1e3a8a',
+  },
+  categoryTextActive: {
+    color: '#fff',
+  },
+  productUnit: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginBottom: 4,
+  },
+  productPrice: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#16a34a',
+    marginBottom: 4,
+  },
+  productOffers: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginBottom: 8,
+  },
+  emptyCart: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  emptyCartText: {
+    fontSize: 18,
+    color: '#6b7280',
+    marginBottom: 20,
+  },
+  cartItemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  cartStatusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  cartStatus: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  cartSummary: {
+    backgroundColor: '#f9fafb',
+    padding: 16,
+    borderRadius: 10,
+    marginVertical: 16,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  summaryLabel: {
+    fontSize: 16,
+    color: '#374151',
+  },
+  summaryValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#111827',
+  },
+  totalRow: {
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+    paddingTop: 8,
+    marginTop: 8,
+  },
+  orderCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    elevation: 2,
+  },
+  orderHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  orderId: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1e3a8a',
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusBadgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  orderProduct: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  orderWholesaler: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: 8,
+  },
+  orderDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  orderQty: {
+    fontSize: 14,
+    color: '#374151',
+  },
+  orderPrice: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#16a34a',
+  },
+  orderDate: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  // Error styles
+  errorContainer: {
+    backgroundColor: '#fee2e2',
+    borderColor: '#fca5a5',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  errorText: {
+    color: '#dc2626',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  retryBtn: {
+    backgroundColor: '#dc2626',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  retryBtnText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  // Loading and empty states
+  loadingContainer: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#6b7280',
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    paddingVertical: 40,
+    backgroundColor: '#f9fafb',
+    borderRadius: 8,
+    marginVertical: 16,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  emptySubText: {
+    fontSize: 14,
+    color: '#6b7280',
+    textAlign: 'center',
   },
 });

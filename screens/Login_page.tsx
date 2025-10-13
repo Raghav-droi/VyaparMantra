@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import auth, { getAuth } from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import CryptoJS from 'crypto-js';
 import {
   Phone,
@@ -32,18 +33,22 @@ import {
 type LoginStep = 'method' | 'password' | 'phone' | 'otp' | 'success';
 type LoginMethod = 'password' | 'otp';
 
-export function WholesalerLoginPage({ navigation }: any) {
+export function LoginPage({ navigation, route }: any) {
+  const userType = route?.params?.userType || 'wholesale'; // default to wholesaler
+
   const [currentStep, setCurrentStep] = useState<LoginStep>('method');
   const [loginMethod, setLoginMethod] = useState<LoginMethod>('password');
-  const [phoneNumber, setPhoneNumber] = useState('');
   const [passwordPhone, setPasswordPhone] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [otpPhone, setOtpPhone] = useState('');
+  const [otpCode, setOtpCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [otpTimer, setOtpTimer] = useState(30);
   const [canResendOtp, setCanResendOtp] = useState(false);
   const [confirmation, setConfirmation] = useState<any>(null);
+  const [userTypeState, setUserTypeState] = useState<string | null>(null);
+  const [phone, setPhone] = useState('');
   const successPulse = useRef(new Animated.Value(1)).current;
 
   // OTP Timer countdown
@@ -70,7 +75,7 @@ export function WholesalerLoginPage({ navigation }: any) {
 
   // Password Login Handler
   const handlePasswordLogin = async () => {
-    if (phoneNumber.length !== 10 || password.length < 6) {
+    if (passwordPhone.length !== 10 || password.length < 6) {
       Alert.alert('Error', 'Enter valid phone and password');
       return;
     }
@@ -81,7 +86,7 @@ export function WholesalerLoginPage({ navigation }: any) {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone: phoneNumber, password }),
+          body: JSON.stringify({ phone: passwordPhone, password }),
         }
       );
       if (!response.ok) {
@@ -92,10 +97,25 @@ export function WholesalerLoginPage({ navigation }: any) {
       }
       const { token } = await response.json();
       await auth().signInWithCustomToken(token);
+
+      // Fetch userType from Firestore
+      const collectionName = userType === 'retail' ? 'retailer' : 'wholesaler';
+      const userDoc = await firestore().collection(collectionName).doc(passwordPhone).get();
+      const userTypeFromDb = userDoc.exists ? userDoc.data().userType : null;
+      setUserTypeState(userTypeFromDb);
+
       setCurrentStep('success');
-      setTimeout(() => {
-        navigation.replace('WholesalerDashboard');
-      }, 2000);
+      
+      // Store the user type for future reference
+      try {
+        await AsyncStorage.setItem(`userType_${passwordPhone}`, userType);
+        console.log(`Stored user type: ${userType} for phone: ${passwordPhone}`);
+      } catch (error) {
+        console.log('Error storing user type:', error);
+      }
+      
+      // Let App.tsx handle the navigation based on user type
+      console.log('Login successful, App.tsx will handle navigation');
     } catch (err) {
       Alert.alert('Error', 'Login failed');
     }
@@ -104,24 +124,25 @@ export function WholesalerLoginPage({ navigation }: any) {
 
   // OTP Login Handlers
   const handleSendOtp = async () => {
-    if (phoneNumber.length !== 10) {
+    if (otpPhone.length !== 10) {
       Alert.alert('Error', 'Enter valid phone number');
       return;
     }
     setIsLoading(true);
     try {
-      const userDoc = await firestore().collection('wholesaler').doc(phoneNumber).get();
+      const collectionName = userType === 'retail' ? 'retailer' : 'wholesaler';
+      const userDoc = await firestore().collection(collectionName).doc(otpPhone).get();
       if (!userDoc.exists) {
         Alert.alert('Error', 'Phone number not registered');
         setIsLoading(false);
         return;
       }
-      const confirmationResult = await getAuth().signInWithPhoneNumber('+91' + phoneNumber);
+      const confirmationResult = await getAuth().signInWithPhoneNumber('+91' + otpPhone);
       setConfirmation(confirmationResult);
       setCurrentStep('otp');
       setOtpTimer(30);
       setCanResendOtp(false);
-      setOtpPhone('');
+      setOtpCode('');
       Alert.alert('OTP Sent', 'Check your SMS for the OTP');
     } catch (err) {
       Alert.alert('Error', 'Failed to send OTP');
@@ -130,7 +151,7 @@ export function WholesalerLoginPage({ navigation }: any) {
   };
 
   const handleVerifyOtp = async () => {
-    if (otpPhone.length !== 6) {
+    if (otpCode.length !== 6) {
       Alert.alert('Error', 'Enter the complete 6-digit OTP');
       return;
     }
@@ -140,11 +161,19 @@ export function WholesalerLoginPage({ navigation }: any) {
     }
     setIsLoading(true);
     try {
-      await confirmation.confirm(otpPhone);
+      await confirmation.confirm(otpCode);
       setCurrentStep('success');
-      setTimeout(() => {
-        navigation.replace('WholesalerDashboard');
-      }, 2000);
+      
+      // Store the user type for future reference
+      try {
+        await AsyncStorage.setItem(`userType_${otpPhone}`, userType);
+        console.log(`Stored user type: ${userType} for phone: ${otpPhone}`);
+      } catch (error) {
+        console.log('Error storing user type:', error);
+      }
+      
+      // Let App.tsx handle the navigation based on user type
+      console.log('OTP verification successful, App.tsx will handle navigation');
     } catch (err) {
       Alert.alert('Error', 'Invalid OTP');
     }
@@ -154,11 +183,11 @@ export function WholesalerLoginPage({ navigation }: any) {
   const handleResendOtp = async () => {
     setIsLoading(true);
     try {
-      const confirmationResult = await getAuth().signInWithPhoneNumber('+91' + phoneNumber);
+      const confirmationResult = await getAuth().signInWithPhoneNumber('+91' + otpPhone);
       setConfirmation(confirmationResult);
       setOtpTimer(30);
       setCanResendOtp(false);
-      setOtpPhone('');
+      setOtpCode('');
       Alert.alert('OTP Sent', 'Check your SMS for the OTP');
     } catch (err) {
       Alert.alert('Error', 'Failed to resend OTP');
@@ -174,7 +203,9 @@ export function WholesalerLoginPage({ navigation }: any) {
           <View style={styles.iconCircleBlue}>
             <Shield color="#2563eb" size={32} />
           </View>
-          <Text style={styles.title}>Wholesaler Login</Text>
+          <Text style={styles.title}>
+            {userType === 'retail' ? 'Retailer Login' : 'Wholesaler Login'}
+          </Text>
           <Text style={styles.muted}>Choose your preferred login method</Text>
         </View>
         <View>
@@ -215,7 +246,9 @@ export function WholesalerLoginPage({ navigation }: any) {
             <Text style={styles.infoTitle}>  Secure & Verified</Text>
           </View>
           <Text style={styles.infoText}>
-            Join thousands of verified wholesalers. Quick setup, instant access to retailers.
+            {userType === 'retail'
+              ? 'Join thousands of verified retailers. Quick setup, instant access to wholesalers.'
+              : 'Join thousands of verified wholesalers. Quick setup, instant access to retailers.'}
           </Text>
         </View>
         <Text style={styles.footerNote}>
@@ -225,198 +258,66 @@ export function WholesalerLoginPage({ navigation }: any) {
     </View>
   );
 
-  const PasswordStep = () => (
-    <View style={styles.card}>
-      <View style={styles.cardBody}>
-        <View style={styles.headerCenter}>
-          <View style={styles.iconCircleBlue}>
-            <Lock color="#2563eb" size={32} />
-          </View>
-          <Text style={styles.title}>Login with Password</Text>
-          <Text style={styles.muted}>Enter your credentials to continue</Text>
-        </View>
-        <View>
-          <View style={{ marginBottom: 12 }}>
-            <Text style={styles.label}>Phone Number</Text>
-            <View style={styles.phoneRow}>
-              <Text style={styles.prefix}>+91</Text>
-              <TextInput
-                value={phoneNumber}
-                onChangeText={(t) => setPhoneNumber(t.replace(/\D/g, '').slice(0, 10))}
-                keyboardType="number-pad"
-                placeholder="Enter 10-digit mobile number"
-                style={styles.phoneInput}
-                maxLength={10}
-              />
-            </View>
-            {phoneNumber.length > 0 && phoneNumber.length !== 10 && (
-              <Text style={styles.errorText}>Please enter a valid 10-digit phone number</Text>
-            )}
-          </View>
-          <View style={{ marginBottom: 12 }}>
-            <Text style={styles.label}>Password</Text>
-            <View style={styles.passwordRow}>
-              <TextInput
-                value={password}
-                onChangeText={setPassword}
-                placeholder="Enter your password"
-                style={styles.passwordInput}
-                secureTextEntry={!showPassword}
-                maxLength={32}
-              />
-              <TouchableOpacity
-                onPress={() => setShowPassword(!showPassword)}
-                style={styles.eyeBtn}
-              >
-                {showPassword ? (
-                  <EyeOff color="#888" size={20} />
-                ) : (
-                  <Eye color="#888" size={20} />
-                )}
-              </TouchableOpacity>
-            </View>
-            {password.length > 0 && password.length < 6 && (
-              <Text style={styles.errorText}>Password must be at least 6 characters</Text>
-            )}
-          </View>
-          <TouchableOpacity
-            onPress={handlePasswordLogin}
-            disabled={phoneNumber.length !== 10 || password.length < 6 || isLoading}
-            style={[
-              styles.primaryBtn,
-              (phoneNumber.length !== 10 || password.length < 6 || isLoading) && styles.btnDisabled,
-            ]}
-            activeOpacity={0.8}
-          >
-            {isLoading ? (
-              <View style={styles.btnContent}>
-                <RefreshCw size={18} color="#fff" style={{ marginRight: 8 }} />
-                <ActivityIndicator color="#fff" />
-                <Text style={styles.btnText}>  Signing In...</Text>
-              </View>
-            ) : (
-              <View style={styles.btnContent}>
-                <Text style={styles.btnText}>Sign In</Text>
-                <ArrowRight size={18} color="#fff" style={{ marginLeft: 8 }} />
-              </View>
-            )}
-          </TouchableOpacity>
-        </View>
-        <TouchableOpacity style={styles.ghostBtn}>
-          <Text style={styles.ghostText}>Forgot Password?</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.outlineBtn}
-          onPress={() => setCurrentStep('method')}
-        >
-          <View style={styles.rowCenter}>
-            <ArrowLeft size={16} color="#111827" style={{ marginRight: 8 }} />
-            <Text style={styles.outlineText}>Back to Login Options</Text>
-          </View>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+  const PasswordStep = () => {
+    const handlePhoneChange = (text: string) => {
+      setPasswordPhone(text.replace(/\D/g, '').slice(0, 10));
+    };
 
-  const PhoneStep = () => (
-    <View style={styles.card}>
-      <View style={styles.cardBody}>
-        <View style={styles.headerCenter}>
-          <View style={styles.iconCircleGreen}>
-            <MessageSquare color="#16a34a" size={32} />
+    return (
+      <View style={styles.card}>
+        <View style={styles.cardBody}>
+          <View style={styles.headerCenter}>
+            <View style={styles.iconCircleBlue}>
+              <Lock color="#2563eb" size={32} />
+            </View>
+            <Text style={styles.title}>Login with Password</Text>
+            <Text style={styles.muted}>Enter your credentials to continue</Text>
           </View>
-          <Text style={styles.title}>Login with OTP</Text>
-          <Text style={styles.muted}>Enter your phone number to receive an OTP</Text>
-        </View>
-        <View>
-          <Text style={styles.label}>Phone Number</Text>
-          <View style={styles.phoneRow}>
-            <Text style={styles.prefix}>+91</Text>
-            <TextInput
-              value={phoneNumber}
-              onChangeText={(t) => setPhoneNumber(t.replace(/\D/g, '').slice(0, 10))}
-              keyboardType="number-pad"
-              placeholder="Enter 10-digit mobile number"
-              style={styles.phoneInput}
-              maxLength={10}
-              
-            />
-          </View>
-          {phoneNumber.length > 0 && phoneNumber.length !== 10 && (
-            <Text style={styles.errorText}>Please enter a valid 10-digit phone number</Text>
-          )}
-          <TouchableOpacity
-            onPress={handleSendOtp}
-            disabled={phoneNumber.length !== 10 || isLoading}
-            style={[
-              styles.primaryBtn,
-              (phoneNumber.length !== 10 || isLoading) && styles.btnDisabled,
-            ]}
-            activeOpacity={0.8}
-          >
-            {isLoading ? (
-              <View style={styles.btnContent}>
-                <RefreshCw size={18} color="#fff" style={{ marginRight: 8 }} />
-                <ActivityIndicator color="#fff" />
-                <Text style={styles.btnText}>  Sending OTP...</Text>
+          <View>
+            <View style={{ marginBottom: 12 }}>
+              <Text style={styles.label}>Phone Number</Text>
+              <View style={styles.phoneRow}>
+                <Text style={styles.prefix}>+91</Text>
+                <TextInput
+                  value={passwordPhone}
+                  onChangeText={handlePhoneChange}
+                  keyboardType="number-pad"
+                  placeholder="Enter 10-digit mobile number"
+                  style={styles.phoneInput}
+                  maxLength={10}
+                  autoFocus={true}
+                />
               </View>
-            ) : (
-              <View style={styles.btnContent}>
-                <Text style={styles.btnText}>Send OTP</Text>
-                <ArrowRight size={18} color="#fff" style={{ marginLeft: 8 }} />
+            </View>
+            <View style={{ marginBottom: 12 }}>
+              <Text style={styles.label}>Password</Text>
+              <View style={styles.passwordRow}>
+                <TextInput
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder="Enter your password"
+                  style={styles.passwordInput}
+                  secureTextEntry={!showPassword}
+                  maxLength={32}
+                />
+                <TouchableOpacity
+                  onPress={() => setShowPassword(!showPassword)}
+                  style={styles.eyeBtn}
+                >
+                  {showPassword ? (
+                    <EyeOff color="#888" size={20} />
+                  ) : (
+                    <Eye color="#888" size={20} />
+                  )}
+                </TouchableOpacity>
               </View>
-            )}
-          </TouchableOpacity>
-        </View>
-        <TouchableOpacity
-          style={styles.outlineBtn}
-          onPress={() => setCurrentStep('method')}
-        >
-          <View style={styles.rowCenter}>
-            <ArrowLeft size={16} color="#111827" style={{ marginRight: 8 }} />
-            <Text style={styles.outlineText}>Back to Login Options</Text>
-          </View>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-
-  const OtpStep = () => (
-    <View style={styles.card}>
-      <View style={styles.cardBody}>
-        <View style={styles.headerCenter}>
-          <View style={styles.iconCircleGreen}>
-            <CheckCircle color="#16a34a" size={32} />
-          </View>
-          <Text style={styles.title}>Verify OTP</Text>
-          <Text style={styles.muted}>
-            We've sent a 6-digit code to{'\n'}
-            <Text style={styles.boldLine}>+91 {phoneNumber}</Text>
-          </Text>
-        </View>
-        <View>
-          <View style={{ marginBottom: 12 }}>
-            <Text style={styles.label}>Enter OTP</Text>
-            <TextInput
-              value={otpPhone}
-              onChangeText={(t) => setOtpPhone(t.replace(/\D/g, '').slice(0, 6))}
-              keyboardType="number-pad"
-              placeholder="Enter 6-digit OTP"
-              style={styles.otpInput}
-              maxLength={6}
-              textAlign="center"
-            />
-            {otpPhone.length > 0 && otpPhone.length !== 6 && (
-              <Text style={styles.errorText}>Please enter the complete 6-digit OTP</Text>
-            )}
-          </View>
-          <View style={{ marginBottom: 12 }}>
+            </View>
             <TouchableOpacity
-              onPress={handleVerifyOtp}
-              disabled={otpPhone.length !== 6 || isLoading}
+              onPress={handlePasswordLogin}
+              disabled={passwordPhone.length !== 10 || password.length < 6 || isLoading}
               style={[
                 styles.primaryBtn,
-                (otpPhone.length !== 6 || isLoading) && styles.btnDisabled,
+                (passwordPhone.length !== 10 || password.length < 6 || isLoading) && styles.btnDisabled,
               ]}
               activeOpacity={0.8}
             >
@@ -424,58 +325,197 @@ export function WholesalerLoginPage({ navigation }: any) {
                 <View style={styles.btnContent}>
                   <RefreshCw size={18} color="#fff" style={{ marginRight: 8 }} />
                   <ActivityIndicator color="#fff" />
-                  <Text style={styles.btnText}>  Verifying...</Text>
+                  <Text style={styles.btnText}>  Signing In...</Text>
                 </View>
               ) : (
                 <View style={styles.btnContent}>
-                  <Text style={styles.btnText}>Verify & Continue</Text>
+                  <Text style={styles.btnText}>Sign In</Text>
                   <ArrowRight size={18} color="#fff" style={{ marginLeft: 8 }} />
                 </View>
               )}
             </TouchableOpacity>
           </View>
-        </View>
-        <View style={styles.center}>
-          {!canResendOtp ? (
+          <TouchableOpacity style={styles.ghostBtn}>
+            <Text style={styles.ghostText}>Forgot Password?</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.outlineBtn}
+            onPress={() => setCurrentStep('method')}
+          >
             <View style={styles.rowCenter}>
-              <Clock size={16} color="#6b7280" />
-              <Text style={styles.resendMuted}>  Resend OTP in {otpTimer}s</Text>
+              <ArrowLeft size={16} color="#111827" style={{ marginRight: 8 }} />
+              <Text style={styles.outlineText}>Back to Login Options</Text>
             </View>
-          ) : (
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
+  const PhoneStep = () => {
+    const handlePhoneChange = (text: string) => {
+      setOtpPhone(text.replace(/\D/g, '').slice(0, 10));
+    };
+
+    return (
+      <View style={styles.card}>
+        <View style={styles.cardBody}>
+          <View style={styles.headerCenter}>
+            <View style={styles.iconCircleGreen}>
+              <MessageSquare color="#16a34a" size={32} />
+            </View>
+            <Text style={styles.title}>Login with OTP</Text>
+            <Text style={styles.muted}>Enter your phone number to receive an OTP</Text>
+          </View>
+          <View>
+            <Text style={styles.label}>Phone Number</Text>
+            <View style={styles.phoneRow}>
+              <Text style={styles.prefix}>+91</Text>
+              <TextInput
+                value={otpPhone}
+                onChangeText={handlePhoneChange}
+                keyboardType="number-pad"
+                placeholder="Enter 10-digit mobile number"
+                style={styles.phoneInput}
+                maxLength={10}
+                autoFocus={true}
+              />
+            </View>
             <TouchableOpacity
-              onPress={handleResendOtp}
-              disabled={isLoading}
-              style={styles.ghostBtn}
-              activeOpacity={0.7}
+              onPress={handleSendOtp}
+              disabled={otpPhone.length !== 10 || isLoading}
+              style={[
+                styles.primaryBtn,
+                (otpPhone.length !== 10 || isLoading) && styles.btnDisabled,
+              ]}
+              activeOpacity={0.8}
             >
               {isLoading ? (
-                <View style={styles.rowCenter}>
-                  <RefreshCw size={16} color="#1e3a8a" style={{ marginRight: 6 }} />
-                  <Text style={styles.ghostText}>Resending...</Text>
+                <View style={styles.btnContent}>
+                  <RefreshCw size={18} color="#fff" style={{ marginRight: 8 }} />
+                  <ActivityIndicator color="#fff" />
+                  <Text style={styles.btnText}>  Sending OTP...</Text>
                 </View>
               ) : (
-                <Text style={styles.ghostText}>Resend OTP</Text>
+                <View style={styles.btnContent}>
+                  <Text style={styles.btnText}>Send OTP</Text>
+                  <ArrowRight size={18} color="#fff" style={{ marginLeft: 8 }} />
+                </View>
               )}
             </TouchableOpacity>
-          )}
-        </View>
-        <TouchableOpacity
-          style={styles.outlineBtn}
-          onPress={() => {
-            setCurrentStep('phone');
-            setOtpPhone('');
-            setOtpTimer(30);
-            setCanResendOtp(false);
-          }}
-        >
-          <View style={styles.rowCenter}>
-            <ArrowLeft size={16} color="#111827" style={{ marginRight: 8 }} />
-            <Text style={styles.outlineText}>Change Phone Number</Text>
           </View>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.outlineBtn}
+            onPress={() => setCurrentStep('method')}
+          >
+            <View style={styles.rowCenter}>
+              <ArrowLeft size={16} color="#111827" style={{ marginRight: 8 }} />
+              <Text style={styles.outlineText}>Back to Login Options</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
       </View>
-    </View>
-  );
+    );
+  };
+
+  const OtpStep = () => {
+    const handleOtpChange = (text: string) => {
+      setOtpCode(text.replace(/\D/g, '').slice(0, 6));
+    };
+
+    return (
+      <View style={styles.card}>
+        <View style={styles.cardBody}>
+          <View style={styles.headerCenter}>
+            <View style={styles.iconCircleGreen}>
+              <CheckCircle color="#16a34a" size={32} />
+            </View>
+            <Text style={styles.title}>Verify OTP</Text>
+            <Text style={styles.muted}>
+              We've sent a 6-digit code to{'\n'}
+              <Text style={styles.boldLine}>+91 {otpPhone}</Text>
+            </Text>
+          </View>
+          <View>
+            <View style={{ marginBottom: 12 }}>
+              <Text style={styles.label}>Enter OTP</Text>
+              <TextInput
+                value={otpCode}
+                onChangeText={handleOtpChange}
+                keyboardType="number-pad"
+                placeholder="Enter 6-digit OTP"
+                style={styles.phoneInput}
+                maxLength={6}
+                autoFocus={true}
+              />
+            </View>
+            <View style={{ marginBottom: 12 }}>
+              <TouchableOpacity
+                onPress={handleVerifyOtp}
+                disabled={otpCode.length !== 6 || isLoading}
+                style={[
+                  styles.primaryBtn,
+                  (otpCode.length !== 6 || isLoading) && styles.btnDisabled,
+                ]}
+                activeOpacity={0.8}
+              >
+                {isLoading ? (
+                  <View style={styles.btnContent}>
+                    <RefreshCw size={18} color="#fff" style={{ marginRight: 8 }} />
+                    <ActivityIndicator color="#fff" />
+                    <Text style={styles.btnText}>  Verifying...</Text>
+                  </View>
+                ) : (
+                  <View style={styles.btnContent}>
+                    <Text style={styles.btnText}>Verify & Continue</Text>
+                    <ArrowRight size={18} color="#fff" style={{ marginLeft: 8 }} />
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+          <View style={styles.center}>
+            {!canResendOtp ? (
+              <View style={styles.rowCenter}>
+                <Clock size={16} color="#6b7280" />
+                <Text style={styles.resendMuted}>  Resend OTP in {otpTimer}s</Text>
+              </View>
+            ) : (
+              <TouchableOpacity
+                onPress={handleResendOtp}
+                disabled={isLoading}
+                style={styles.ghostBtn}
+                activeOpacity={0.7}
+              >
+                {isLoading ? (
+                  <View style={styles.rowCenter}>
+                    <RefreshCw size={16} color="#1e3a8a" style={{ marginRight: 6 }} />
+                    <Text style={styles.ghostText}>Resending...</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.ghostText}>Resend OTP</Text>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
+          <TouchableOpacity
+            style={styles.outlineBtn}
+            onPress={() => {
+              setCurrentStep('phone');
+              setOtpCode('');
+              setOtpTimer(30);
+              setCanResendOtp(false);
+            }}
+          >
+            <View style={styles.rowCenter}>
+              <ArrowLeft size={16} color="#111827" style={{ marginRight: 8 }} />
+              <Text style={styles.outlineText}>Change Phone Number</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
 
   const SuccessStep = () => (
     <View style={styles.card}>
@@ -487,12 +527,18 @@ export function WholesalerLoginPage({ navigation }: any) {
             <CheckCircle color="#16a34a" size={32} />
           </Animated.View>
           <Text style={styles.successTitle}>Login Successful!</Text>
-          <Text style={styles.muted}>Welcome back to your wholesaler dashboard</Text>
+          <Text style={styles.muted}>
+            {userType === 'retail'
+              ? 'Welcome back to your retailer dashboard'
+              : 'Welcome back to your wholesaler dashboard'}
+          </Text>
         </View>
         <View style={styles.successBox}>
           <View style={styles.rowBetween}>
             <Text style={styles.kvLabel}>Phone Number</Text>
-            <Text style={styles.badgeSecondary}>+91 {phoneNumber}</Text>
+            <Text style={styles.badgeSecondary}>
+              +91 {currentStep === 'password' ? passwordPhone : otpPhone}
+            </Text>
           </View>
           <View style={styles.rowBetween}>
             <Text style={styles.kvLabel}>Status</Text>
@@ -524,7 +570,6 @@ export function WholesalerLoginPage({ navigation }: any) {
             {currentStep === 'otp' && <OtpStep />}
             {currentStep === 'success' && <SuccessStep />}
           </View>
-          {/* Decorative blobs */}
           <View style={styles.blurA} />
           <View style={styles.blurB} />
           <View style={styles.blurC} />
@@ -604,7 +649,6 @@ const styles = StyleSheet.create({
   },
   passwordInput: { flex: 1, fontSize: 16, color: '#111827' },
   eyeBtn: { padding: 4 },
-  errorText: { color: '#ef4444', fontSize: 12, marginTop: 6 },
   primaryBtn: {
     height: 48,
     borderRadius: 10,

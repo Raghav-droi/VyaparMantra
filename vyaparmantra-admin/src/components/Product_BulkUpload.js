@@ -10,7 +10,7 @@ import {
   FormControl,
   Alert,
 } from '@mui/material';
-import { collection, addDoc, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, getDoc, query, where } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import Papa from 'papaparse';
 import { saveAs } from 'file-saver';
@@ -22,6 +22,8 @@ const ProductBulkUpload = () => {
   const [message, setMessage] = useState('');
   const [wholesalers, setWholesalers] = useState([]);
   const [failedProducts, setFailedProducts] = useState([]);
+  const [failedPage, setFailedPage] = useState(1);
+  const failedPerPage = 10; // Number of failed products per page
 
   useEffect(() => {
     const fetchWholesalers = async () => {
@@ -86,68 +88,95 @@ const ProductBulkUpload = () => {
       header: true,
       complete: async (results) => {
         const products = results.data;
+        if (products.length > 200) {
+          setMessage('Error: You cannot upload more than 200 products in one file.');
+          setUploading(false);
+          return;
+        }
         let successCount = 0;
         let errorCount = 0;
         let failedRows = [];
         for (const product of products) {
-          let errorMsg = '';
-          // Validate unit
-          if (!allowedUnits.includes(product.unit)) {
-            errorMsg = `Unit "${product.unit}" is not allowed`;
-          }
-          // Validate category
-          else if (!allowedCategories.includes(product.category)) {
-            errorMsg = `Category "${product.category}" is not allowed`;
-          }
+          let errors = [];
+
           // Validate required fields
-          else if (
-            !product.productId ||
-            !product.name ||
-            !product.category ||
-            !product.unit ||
-            !product.pricePerUnit ||
-            !product.stock
-          ) {
-            errorMsg = 'Missing required field(s)';
-          }
-          // Validate category: only text, uppercase, no extra spaces, must be allowed
-          else if (
+          if (!product.productId) errors.push('Missing productId');
+          if (!product.name) errors.push('Missing name');
+          if (!product.category) errors.push('Missing category');
+          if (!product.unit) errors.push('Missing unit');
+          if (!product.pricePerUnit) errors.push('Missing pricePerUnit');
+          if (!product.stock) errors.push('Missing stock');
+
+          // Validate category
+          if (
             typeof product.category !== 'string' ||
             !/^[A-Za-z]+(?: [A-Za-z]+)*$/.test(product.category.trim()) ||
             !allowedCategories.includes(product.category.trim().toUpperCase())
           ) {
-            errorMsg = `Category "${product.category}" is not allowed or invalid format`;
+            errors.push(`Category "${product.category}" is not allowed or invalid format`);
           }
-          // Validate description: only text
-          else if (
+
+          // Validate description
+          if (
             product.description &&
             !/^[A-Za-z0-9\s.,'-]*$/.test(product.description)
           ) {
-            errorMsg = 'Description must be text only';
+            errors.push('Description must be text only');
           }
-          // Validate unit: must be allowed
-          else if (!allowedUnits.includes(product.unit.trim().toUpperCase())) {
-            errorMsg = `Unit "${product.unit}" is not allowed`;
+
+          // Validate unit
+          if (!allowedUnits.includes(product.unit.trim().toUpperCase())) {
+            errors.push(`Unit "${product.unit}" is not allowed`);
           }
-          // Validate pricePerUnit: number, max 2 decimals
-          else if (
+
+          // Validate pricePerUnit
+          if (
             isNaN(product.pricePerUnit) ||
             !/^\d+(\.\d{1,2})?$/.test(product.pricePerUnit)
           ) {
-            errorMsg = 'pricePerUnit must be a number with up to 2 decimals';
+            errors.push('pricePerUnit must be a number with up to 2 decimals');
           }
-          // Validate stock: whole number only
-          else if (
+
+          // Validate stock
+          if (
             isNaN(product.stock) ||
             !/^\d+$/.test(product.stock)
           ) {
-            errorMsg = 'Stock must be a whole number';
+            errors.push('Stock must be a whole number');
           }
-          // Add more validations as needed...
 
-          if (errorMsg) {
+          // Validate name: only alphanumeric and spaces allowed
+          if (
+            product.name &&
+            !/^[A-Za-z0-9\s]+$/.test(product.name.trim())
+          ) {
+            errors.push('Name must contain only alphanumeric characters and spaces');
+          }
+
+          // Check for duplicate in wholesaler's products
+          const wholesalerProductQuery = query(
+            collection(db, 'wholesaler', wholesalerId, 'products'),
+            where('productId', '==', product.productId)
+          );
+          const wholesalerProductSnap = await getDocs(wholesalerProductQuery);
+          if (!wholesalerProductSnap.empty) {
+            errors.push(`Duplicate productId "${product.productId}" for this wholesaler`);
+          }
+
+          // Check for duplicate in top-level products collection
+          const topProductQuery = query(
+            collection(db, 'products'),
+            where('productId', '==', product.productId),
+            where('wholesalerId', '==', wholesalerId)
+          );
+          const topProductSnap = await getDocs(topProductQuery);
+          if (!topProductSnap.empty) {
+            errors.push(`Duplicate productId "${product.productId}" in global products`);
+          }
+
+          if (errors.length > 0) {
             errorCount++;
-            failedRows.push({ ...product, error: errorMsg });
+            failedRows.push({ ...product, error: errors.join('; ') });
             continue;
           }
 
@@ -211,6 +240,12 @@ const ProductBulkUpload = () => {
       },
     });
   };
+
+  const totalFailedPages = Math.ceil(failedProducts.length / failedPerPage);
+  const paginatedFailedProducts = failedProducts.slice(
+    (failedPage - 1) * failedPerPage,
+    failedPage * failedPerPage
+  );
 
   return (
     <Box sx={{ p: 4 }}>
@@ -318,6 +353,11 @@ const ProductBulkUpload = () => {
             <b>priceRanges</b> example: <code>[{"{"}minQty:1,price:5{"}"},{"{"}minQty:10,price:4.5{"}"}]</code> or <code>1:5,10:4.5</code>
           </Typography>
         </Box>
+        <Box sx={{ mt: 1 }}>
+          <Typography variant="body2" color="error" sx={{ fontWeight: 'bold' }}>
+            Note: You can upload a maximum of 200 products per file.
+          </Typography>
+        </Box>
         {failedProducts.length > 0 && (
           <Box sx={{ mt: 3 }}>
             <Typography variant="subtitle1" sx={{ mb: 1 }}>
@@ -331,8 +371,8 @@ const ProductBulkUpload = () => {
             >
               Download Failed Products
             </Button>
-            <Box sx={{ maxHeight: 300, overflowY: 'auto', mt: 1 }}>
-              {failedProducts.map((product, index) => (
+            <Box sx={{ mt: 1 }}>
+              {paginatedFailedProducts.map((product, index) => (
                 <Box
                   key={index}
                   sx={{
@@ -352,6 +392,28 @@ const ProductBulkUpload = () => {
                   </Typography>
                 </Box>
               ))}
+            </Box>
+            {/* Pagination Controls */}
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', mt: 2 }}>
+              <Button
+                size="small"
+                disabled={failedPage === 1}
+                onClick={() => setFailedPage(failedPage - 1)}
+                sx={{ mr: 1 }}
+              >
+                Previous
+              </Button>
+              <Typography variant="body2">
+                Page {failedPage} of {totalFailedPages}
+              </Typography>
+              <Button
+                size="small"
+                disabled={failedPage === totalFailedPages}
+                onClick={() => setFailedPage(failedPage + 1)}
+                sx={{ ml: 1 }}
+              >
+                Next
+              </Button>
             </Box>
           </Box>
         )}

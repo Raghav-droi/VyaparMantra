@@ -68,6 +68,11 @@ export default function RegistrationForm({ navigation }: any) {
   const [loading, setLoading] = useState(false);
   const [verificationId, setVerificationId] = useState('');
   const [locationLoading, setLocationLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
+  const [businessCategories, setBusinessCategories] = useState<string[]>([]);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [categorySearch, setCategorySearch] = useState('');
 
   const handleFetchLocation = () => {
     setLocationLoading(true);
@@ -134,6 +139,7 @@ export default function RegistrationForm({ navigation }: any) {
     }
 
     if (!formData.termsAccepted) newErrors.termsAccepted = 'You must accept terms';
+    if (!selectedCategories.length) newErrors.businessCategory = 'Select at least one category';
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -222,6 +228,7 @@ export default function RegistrationForm({ navigation }: any) {
 
       await firestore().collection(collection).doc(docName).set({
         ...formData,
+        businessCategory: selectedCategories, // <-- add this line
         password: hashedPassword,
         uuid: uuid.v4(),
         createdAt: new Date(),
@@ -234,6 +241,22 @@ export default function RegistrationForm({ navigation }: any) {
       setLoading(false);
     }
   };
+
+  React.useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const snap = await firestore()
+          .collection('businessCategories')
+          .doc('HgJx3qMGO3bWeCJWtbBU')
+          .get();
+        if (snap.exists) {
+          const arr = snap.data()['Category Name'];
+          if (Array.isArray(arr)) setBusinessCategories(arr);
+        }
+      } catch (err) {}
+    };
+    fetchCategories();
+  }, []);
 
   return (
     <LinearGradient colors={["#FF8C00", "#FFB347", "#FFD580"]} style={styles.gradient}>
@@ -336,14 +359,25 @@ export default function RegistrationForm({ navigation }: any) {
               {!!errors.phoneNumber && <Text style={styles.errorText}>{errors.phoneNumber}</Text>}
 
               {/* Password Field */}
-              <FormInput
-                label="Create Password *"
-                value={formData.password}
-                onChangeText={(text: string) => handleInputChange('password', text)}
-                placeholder="Create a password (min 6 chars)"
-                error={errors.password}
-                secureTextEntry={true}
-              />
+              <View style={{ position: 'relative' }}>
+                <FormInput
+                  label="Create Password *"
+                  value={formData.password}
+                  onChangeText={(text: string) => handleInputChange('password', text)}
+                  placeholder="Create a password (min 6 chars)"
+                  error={errors.password}
+                  secureTextEntry={!showPassword}
+                  inputStyle={{ color: '#333' }} // <-- set visible text color
+                />
+                <TouchableOpacity
+                  style={{ position: 'absolute', right: 12, top: 38 }}
+                  onPress={() => setShowPassword(!showPassword)}
+                >
+                  <Text style={{ color: '#FF8C00', fontWeight: 'bold' }}>
+                    {showPassword ? 'Hide' : 'Show'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
 
               {/* Wholesaler Fields */}
               {formData.userType === 'wholesale' && (
@@ -352,6 +386,56 @@ export default function RegistrationForm({ navigation }: any) {
                   errors={errors}
                   handleInputChange={handleInputChange}
                 />
+              )}
+
+              {/* Business Category */}
+              <Text style={styles.label}>Business Category *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Type to search category"
+                value={categorySearch}
+                onChangeText={setCategorySearch}
+              />
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 }}>
+                {selectedCategories.map(cat => (
+                  <TouchableOpacity
+                    key={cat}
+                    style={{ backgroundColor: '#FF8C00', borderRadius: 12, padding: 6, margin: 4 }}
+                    onPress={() =>
+                      setSelectedCategories(selectedCategories.filter(c => c !== cat))
+                    }
+                  >
+                    <Text style={{ color: '#fff', fontWeight: 'bold' }}>{cat} ✕</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {businessCategories
+                .filter(cat =>
+                  cat.toLowerCase().includes(categorySearch.toLowerCase()) &&
+                  !selectedCategories.includes(cat)
+                )
+                .slice(0, 5) // show max 5 suggestions
+                .map(cat => (
+                  <TouchableOpacity
+                    key={cat}
+                    style={{
+                      backgroundColor: '#FFF8E1',
+                      borderRadius: 8,
+                      padding: 8,
+                      marginVertical: 2,
+                      borderWidth: 1,
+                      borderColor: '#bbb',
+                    }}
+                    onPress={() => {
+                      setSelectedCategories([...selectedCategories, cat]);
+                      setCategorySearch('');
+                    }}
+                  >
+                    <Text style={{ color: '#333' }}>{cat}</Text> {/* <-- dark text color */}
+                  </TouchableOpacity>
+                ))}
+              {!!errors.businessCategory && (
+                <Text style={styles.errorText}>{errors.businessCategory}</Text>
               )}
 
               {/* Terms Acceptance */}

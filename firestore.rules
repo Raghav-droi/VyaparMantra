@@ -1,8 +1,39 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isSignedIn() { return request.auth != null; }
+    function isRetailer(retailerId) { return request.auth.token.phone_number != null && retailerId == request.auth.token.phone_number.replace('+91',''); }
+    function isWholesaler(wholesalerId) { return request.auth.token.phone_number != null && wholesalerId == request.auth.token.phone_number.replace('+91',''); }
+
+    // Public read access to products catalog; writes only via trusted pathways (admin/wholesaler)
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if false; // managed by admins/wholesaler tools only
+    }
+
+    // Wholesaler product listings
+    match /wholesalerProducts/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isSignedIn(); // further tighten by verifying wholesaler identity in data if needed
+    }
+
+    // Orders: retailer can create; both parties can read; status updates by wholesaler or cloud functions
+    match /orders/{orderId} {
+      allow create: if isSignedIn();
+      allow read: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if false;
+    }
+
+    // Notifications read for signed-in users
+    match /notifications/{nid} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // Default deny
     match /{document=**} {
-      allow read, write: if true; // Temporary for testing
+      allow read, write: if false;
     }
   }
 }

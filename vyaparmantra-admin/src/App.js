@@ -8,6 +8,7 @@ import TopBar from './components/TopBar';
 import './App.css';
 import ProductBulkUpload from './components/Product_BulkUpload';
 import ProductFieldGeneration from './components/Product_field_generation';
+import OrdersPage from './pages/OrdersPage';
 
 function App() {
   const [admin, setAdmin] = useState(null);
@@ -56,6 +57,7 @@ function App() {
               <Route path="/" element={<Navigate to="/dashboard" />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/users" element={<UserTable />} />
+              <Route path="/orders" element={<OrdersPage />} />
               <Route path="/business" element={<div>Business Analytics - Coming Soon</div>} />
               <Route path="/reports" element={<div>Reports - Coming Soon</div>} />
               <Route path="/bulk-upload" element={<ProductBulkUpload />} />

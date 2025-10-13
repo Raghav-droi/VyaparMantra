@@ -46,7 +46,7 @@ export default function Home_Page_Login({ navigation }: HomePageLoginProps) {
             <Text style={styles.cardTitle}>Login as</Text>
             <Button
   style={styles.wholesalerButton}
-  onPress={() => navigation.navigate('Login')}
+  onPress={() => navigation.navigate('Login', { userType: 'wholesale' })}
 >
   <Icon name="warehouse" size={22} color="#fff" />
   <Text style={styles.buttonText}> Wholesaler Login</Text>
@@ -54,10 +54,7 @@ export default function Home_Page_Login({ navigation }: HomePageLoginProps) {
 
 <Button
   style={styles.retailerButton}
-  onPress={() => {
-    // If you have a retailer login, navigate to its screen
-    // navigation.navigate('RetailerLogin');
-  }}
+  onPress={() => navigation.navigate('Login', { userType: 'retail' })}
 >
   <Icon name="shopping" size={22} color="#fff" />
   <Text style={styles.buttonText}> Retailer Login</Text>

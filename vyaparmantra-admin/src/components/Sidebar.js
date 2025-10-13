@@ -15,6 +15,9 @@ import {
   People as PeopleIcon,
   Business as BusinessIcon,
   Analytics as AnalyticsIcon,
+  ShoppingCart as ShoppingCartIcon,
+  Upload as UploadIcon,
+  Tune as TuneIcon,
 } from '@mui/icons-material';
 import { useLocation } from 'react-router-dom';
 import { Link } from 'react-router-dom';
@@ -27,10 +30,11 @@ const Sidebar = () => {
   const menuItems = [
     { id: '/dashboard', label: 'Dashboard', icon: <DashboardIcon /> },
     { id: '/users', label: 'Users Management', icon: <PeopleIcon /> },
+    { id: '/orders', label: 'Order Management', icon: <ShoppingCartIcon /> },
     { id: '/business', label: 'Business Analytics', icon: <BusinessIcon /> },
     { id: '/reports', label: 'Reports', icon: <AnalyticsIcon /> },
-    { id: '/bulk-upload', label: 'Product Bulk Upload', icon: <BusinessIcon /> },
-    { id: '/field-settings', label: 'Product Field Settings', icon: <BusinessIcon /> },
+    { id: '/bulk-upload', label: 'Product Bulk Upload', icon: <UploadIcon /> },
+    { id: '/field-settings', label: 'Product Field Settings', icon: <TuneIcon /> },
   ];
 
   return (

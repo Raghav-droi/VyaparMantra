@@ -59,7 +59,7 @@ const ProductFieldGeneration = () => {
       <TextField
         label="Add Unit"
         value={newUnit}
-        onChange={e => setNewUnit(e.target.value)}
+        onChange={e => setNewUnit(e.target.value.toUpperCase())}
         size="small"
         sx={{ mr: 1 }}
       />
@@ -74,7 +74,7 @@ const ProductFieldGeneration = () => {
       <TextField
         label="Add Category"
         value={newCategory}
-        onChange={e => setNewCategory(e.target.value)}
+        onChange={e => setNewCategory(e.target.value.toUpperCase())}
         size="small"
         sx={{ mr: 1 }}
       />
