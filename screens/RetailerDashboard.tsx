@@ -6,15 +6,21 @@ import {
   ScrollView,
   StyleSheet,
   Modal,
-  SafeAreaView,
   FlatList,
   Alert,
   TextInput,
   ActivityIndicator,
+  StatusBar,
 } from 'react-native';
-import { LogOut, Home, ShoppingCart, Clock, Truck, Settings, X, Star, Heart, User, CreditCard, Search, Filter, Plus } from 'lucide-react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { LogOut, Home, ShoppingCart, Clock, Truck, Settings, X, Star, Heart, User, CreditCard, Search, Filter, Plus, Bell, Menu } from 'lucide-react-native';
 import { getAuth } from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
+import ProfessionalHeader from '../components/ui/ProfessionalHeader';
+import AnimatedCard from '../components/ui/AnimatedCard';
+import AnimatedButton from '../components/ui/AnimatedButton';
+import { SkeletonLoader, SkeletonCard, SkeletonList } from '../components/ui/SkeletonLoader';
+import { useNavigation } from '../App';
 
 const db = firestore();
 
@@ -73,7 +79,8 @@ interface Order {
   updatedAt: any;
 }
 
-export default function RetailerDashboard({ navigation }: { navigation: any }) {
+export default function RetailerDashboard() {
+  const navigation = useNavigation();
   const [currentScreen, setCurrentScreen] = useState<Screen>('home');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
@@ -87,6 +94,7 @@ export default function RetailerDashboard({ navigation }: { navigation: any }) {
   // UI state
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchInput, setSearchInput] = useState(''); // Separate input state
   const [selectedCategory, setSelectedCategory] = useState('All Categories');
   const [sortByPrice, setSortByPrice] = useState(false);
   const [sortByRating, setSortByRating] = useState(false);
@@ -162,9 +170,9 @@ export default function RetailerDashboard({ navigation }: { navigation: any }) {
         query = query.where('category', '==', selectedCategory) as any;
       }
       
-      // Apply search filter
+      // Apply search filter - case insensitive partial search
       if (searchQuery.trim()) {
-        const searchTerm = searchQuery.trim().toUpperCase();
+        const searchTerm = searchQuery.trim().toLowerCase();
         query = query.where('searchName', '>=', searchTerm)
                     .where('searchName', '<=', searchTerm + '\uf8ff') as any;
       }
@@ -186,22 +194,44 @@ export default function RetailerDashboard({ navigation }: { navigation: any }) {
     }
   }, [selectedCategory, searchQuery]);
 
+  // Debounced search effect
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchQuery(searchInput);
+    }, 500); // 500ms delay
+
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
   // Fetch wholesaler products for price comparison
   const fetchWholesalerProducts = useCallback(async (productIds: string[]) => {
     if (productIds.length === 0) return;
     
     try {
+      console.log('Fetching wholesaler products for productIds:', productIds);
       const snapshot = await db.collection('wholesalerProducts')
         .where('productId', 'in', productIds)
         .where('available', '==', true)
         .get();
+      
+      console.log('Wholesaler products snapshot size:', snapshot.docs.length);
       
       const wholesalerProductsList: WholesalerProduct[] = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as WholesalerProduct[];
       
+      console.log('Wholesaler products found:', wholesalerProductsList);
       setWholesalerProducts(wholesalerProductsList);
+      
+      // If no wholesaler products found, log the issue for debugging
+      if (wholesalerProductsList.length === 0) {
+        console.log('No wholesaler products found in Firestore for productIds:', productIds);
+        console.log('This means either:');
+        console.log('1. No wholesalers have added these products yet');
+        console.log('2. The products are not marked as available');
+        console.log('3. The productIds do not match the wholesalerProducts collection');
+      }
     } catch (err) {
       console.error('Error fetching wholesaler products:', err);
     }
@@ -274,13 +304,19 @@ export default function RetailerDashboard({ navigation }: { navigation: any }) {
 
   // Add to cart function
   const addToCart = async (productId: string, wholesalerId: string, pricePerUnit: number) => {
-    if (!user?.phoneNumber) {
+    if (!user) {
       Alert.alert('Error', 'Please login to add items to cart');
       return;
     }
 
     try {
-      const retailerId = user.phoneNumber.replace('+91', '');
+      // Get retailer ID from phone number or use UID as fallback
+      let retailerId = user.phoneNumber?.replace('+91', '');
+      if (!retailerId) {
+        // For password login, use UID as retailer ID
+        retailerId = user.uid;
+      }
+      
       const product = products.find(p => p.productId === productId);
       const wholesalerProduct = wholesalerProducts.find(wp => 
         wp.productId === productId && wp.wholesalerId === wholesalerId
@@ -388,7 +424,7 @@ export default function RetailerDashboard({ navigation }: { navigation: any }) {
     try {
       await getAuth().signOut();
       Alert.alert('Signed Out', 'You have been signed out.');
-      navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+      navigation.navigate('Home');
     } catch (err) {
       console.error('Error signing out:', err);
     }
@@ -402,52 +438,130 @@ export default function RetailerDashboard({ navigation }: { navigation: any }) {
   // Helper function to get best price for a product
   const getBestPrice = (productId: string) => {
     const productWholesalers = getProductWholesalers(productId);
-    if (productWholesalers.length === 0) return null;
-    return Math.min(...productWholesalers.map(wp => wp.pricePerUnit));
+    if (productWholesalers.length === 0) {
+      console.log('No wholesalers found for product:', productId);
+      return null;
+    }
+    
+    // Get all prices from all wholesalers for this product
+    const allPrices = productWholesalers.map(wp => wp.pricePerUnit);
+    console.log('Prices for product', productId, ':', allPrices);
+    
+    const minPrice = Math.min(...allPrices);
+    console.log('Minimum price for product', productId, ':', minPrice);
+    
+    return minPrice;
+  };
+
+  // Helper function to create sample wholesaler product data (for development/testing)
+  const createSampleWholesalerData = async (productId: string) => {
+    try {
+      const sampleData = {
+        wholesalerId: 'sample-wholesaler-1',
+        wholesalerName: 'Sample Wholesaler',
+        productId: productId,
+        pricePerUnit: Math.floor(Math.random() * 100) + 50,
+        priceTiers: [
+          { minQty: 1, maxQty: 10, pricePerUnit: Math.floor(Math.random() * 100) + 50 },
+          { minQty: 11, maxQty: 50, pricePerUnit: Math.floor(Math.random() * 80) + 40 },
+          { minQty: 51, maxQty: 100, pricePerUnit: Math.floor(Math.random() * 60) + 30 }
+        ],
+        available: true,
+        unit: 'BOX',
+        createdAt: firestore.FieldValue.serverTimestamp(),
+      };
+
+      await db.collection('wholesalerProducts').add(sampleData);
+      console.log('Sample wholesaler data created for product:', productId);
+      
+      // Refresh the data
+      const productIds = products.map(p => p.productId);
+      fetchWholesalerProducts(productIds);
+    } catch (error) {
+      console.error('Error creating sample data:', error);
+    }
   };
 
   // Screens
   const renderHomeScreen = () => (
-    <ScrollView contentContainerStyle={styles.screenContainer}>
-      <Text style={styles.header}>Welcome, {retailerName}</Text>
-      <Text style={styles.subHeader}>{retailerLocation}</Text>
-      
+    <ScrollView contentContainerStyle={styles.screenContainer} showsVerticalScrollIndicator={false}>
+      {/* Welcome Card */}
+      <AnimatedCard
+        animationType="fadeInUp"
+        delay={0}
+        style={[styles.welcomeCard, { backgroundColor: '#fef3c7' }]}
+      >
+        <View style={styles.welcomeContent}>
+          <View style={styles.welcomeTextContainer}>
+            <Text style={styles.welcomeTitle}>Welcome back!</Text>
+            <Text style={styles.welcomeSubtitle}>{retailerName || 'Retailer'}</Text>
+            <Text style={styles.welcomeLocation}>{retailerLocation}</Text>
+          </View>
+          <View style={styles.welcomeIcon}>
+            <User color="#92400e" size={40} />
+          </View>
+        </View>
+      </AnimatedCard>
+
       {/* Error Display */}
       {error && (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={() => {
-            setError(null);
-            fetchCategories();
-            fetchProducts();
-          }}>
-            <Text style={styles.retryBtnText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
+        <AnimatedCard animationType="fadeInUp" delay={100} style={styles.errorCard}>
+          <View style={styles.errorContent}>
+            <X color="#dc2626" size={20} />
+            <Text style={styles.errorText}>{error}</Text>
+            <AnimatedButton
+              title="Retry"
+              size="small"
+              variant="outline"
+              onPress={() => {
+                setError(null);
+                fetchCategories();
+                fetchProducts();
+              }}
+            />
+          </View>
+        </AnimatedCard>
       )}
       
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchInputContainer}>
-          <Search color="#666" size={20} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search products..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            onSubmitEditing={fetchProducts}
-          />
+      {/* Search Section */}
+      <AnimatedCard animationType="fadeInUp" delay={200} style={styles.searchCard}>
+        <View style={styles.searchSection}>
+          <Text style={styles.searchTitle}>Find Products</Text>
+          <View style={styles.searchContainer}>
+            <View style={styles.searchInputContainer}>
+              <Search color="#6b7280" size={20} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search products (e.g., rice, apple, milk)..."
+                value={searchInput}
+                onChangeText={setSearchInput}
+                onSubmitEditing={() => {
+                  setSearchQuery(searchInput);
+                  fetchProducts();
+                }}
+                autoCorrect={false}
+                autoCapitalize="none"
+              />
+            </View>
+            <AnimatedButton
+              title="Search"
+              size="medium"
+              onPress={fetchProducts}
+              style={styles.searchBtn}
+            />
+            <AnimatedButton
+              title="Browse All"
+              size="medium"
+              variant="secondary"
+              onPress={() => navigation.navigate('SearchProducts', { 
+                initialQuery: searchInput,
+                category: selectedCategory 
+              })}
+              style={styles.searchBtn}
+            />
+          </View>
         </View>
-        <TouchableOpacity style={styles.searchBtn} onPress={fetchProducts}>
-          <Text style={styles.searchBtnText}>Search</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.searchBtn, { backgroundColor: '#16a34a', marginLeft: 8 }]} 
-          onPress={() => navigation.navigate('SearchProducts')}
-        >
-          <Text style={styles.searchBtnText}>Browse All</Text>
-        </TouchableOpacity>
-      </View>
+      </AnimatedCard>
 
       {/* Categories */}
       <Text style={styles.sectionTitle}>Categories</Text>
@@ -516,13 +630,18 @@ export default function RetailerDashboard({ navigation }: { navigation: any }) {
                 <Text style={styles.productName}>{item.name}</Text>
                 <Text style={styles.productCategory}>{item.category}</Text>
                 <Text style={styles.productUnit}>{item.unit}</Text>
-                {bestPrice && (
+                {bestPrice ? (
                   <Text style={styles.productPrice}>From ₹{bestPrice}</Text>
+                ) : (
+                  <Text style={styles.productPrice}>Price on request</Text>
                 )}
                 <Text style={styles.productOffers}>
-                  {productWholesalers.length} wholesaler{productWholesalers.length !== 1 ? 's' : ''}
+                  {productWholesalers.length > 0 
+                    ? `${productWholesalers.length} wholesaler${productWholesalers.length !== 1 ? 's' : ''}`
+                    : 'No wholesalers yet'
+                  }
                 </Text>
-                {productWholesalers.length > 0 && (
+                {productWholesalers.length > 0 ? (
                   <TouchableOpacity 
                     style={styles.addCartBtn}
                     onPress={() => {
@@ -533,6 +652,13 @@ export default function RetailerDashboard({ navigation }: { navigation: any }) {
                     }}
                   >
                     <Text style={styles.addCartText}>Quick Add</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity 
+                    style={[styles.addCartBtn, { backgroundColor: '#6b7280' }]}
+                    onPress={() => createSampleWholesalerData(item.productId)}
+                  >
+                    <Text style={styles.addCartText}>Add Sample Data</Text>
                   </TouchableOpacity>
                 )}
               </TouchableOpacity>
@@ -659,17 +785,17 @@ export default function RetailerDashboard({ navigation }: { navigation: any }) {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#fbbf24' }}>
-      {/* Top Bar */}
-      <View style={styles.topBar}>
-        <TouchableOpacity onPress={() => setSidebarOpen(true)}>
-          <User color="#fff" size={32} />
-        </TouchableOpacity>
-        <Text style={styles.topBarTitle}>Retailer Dashboard</Text>
-        <TouchableOpacity onPress={() => navigateToScreen('cart')}>
-          <ShoppingCart color="#fff" size={32} />
-        </TouchableOpacity>
-      </View>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#1e3a8a' }} edges={['top']}>
+      <StatusBar barStyle="light-content" backgroundColor="#1e3a8a" />
+      <View style={{ flex: 1, backgroundColor: '#f8fafc' }}>
+        <ProfessionalHeader
+        title="Retailer Dashboard"
+        subtitle={retailerName ? `Welcome, ${retailerName}` : undefined}
+        onMenuPress={() => setSidebarOpen(true)}
+        onCartPress={() => navigateToScreen('cart')}
+        cartItemCount={cartItems.length}
+        showGradient={true}
+      />
 
       {/* Main Content */}
       <View style={{ flex: 1 }}>
@@ -679,7 +805,8 @@ export default function RetailerDashboard({ navigation }: { navigation: any }) {
       </View>
 
       {/* Bottom Navigation */}
-      <View style={styles.bottomNav}>
+      <SafeAreaView style={styles.bottomNavContainer} edges={['bottom']}>
+        <View style={styles.bottomNav}>
         <TouchableOpacity onPress={() => navigateToScreen('home')}>
           <Home color={currentScreen === 'home' ? '#1e3a8a' : '#888'} size={28} />
         </TouchableOpacity>
@@ -692,7 +819,8 @@ export default function RetailerDashboard({ navigation }: { navigation: any }) {
         <TouchableOpacity onPress={() => setSidebarOpen(true)}>
           <Settings color="#888" size={28} />
         </TouchableOpacity>
-      </View>
+        </View>
+      </SafeAreaView>
 
       {/* Sidebar */}
       <Modal visible={sidebarOpen} animationType="slide" transparent>
@@ -716,30 +844,92 @@ export default function RetailerDashboard({ navigation }: { navigation: any }) {
           </View>
         </View>
       </Modal>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  topBar: {
+  // Welcome Card Styles
+  welcomeCard: {
+    marginBottom: 16,
+  },
+  welcomeContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1e3a8a',
-    padding: 12,
     justifyContent: 'space-between',
   },
-  topBarTitle: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 20,
+  welcomeTextContainer: {
+    flex: 1,
+  },
+  welcomeTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#92400e',
+    marginBottom: 4,
+  },
+  welcomeSubtitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#a16207',
+    marginBottom: 2,
+  },
+  welcomeLocation: {
+    fontSize: 14,
+    color: '#a16207',
+    opacity: 0.8,
+  },
+  welcomeIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(146, 64, 14, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  
+  // Error Card Styles
+  errorCard: {
+    backgroundColor: '#fef2f2',
+    borderColor: '#fecaca',
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  errorContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  errorText: {
+    flex: 1,
+    color: '#dc2626',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  
+  // Search Card Styles
+  searchCard: {
+    marginBottom: 16,
+  },
+  searchSection: {
+    width: '100%',
+  },
+  searchTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 12,
+  },
+  bottomNavContainer: {
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderColor: '#eee',
   },
   bottomNav: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    backgroundColor: '#fff',
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderColor: '#eee',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
   },
   screenContainer: {
     padding: 16,
@@ -910,26 +1100,25 @@ const styles = StyleSheet.create({
   // New styles for dynamic components
   searchContainer: {
     flexDirection: 'row',
-    marginBottom: 16,
-    gap: 8,
-    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 12,
   },
   searchInputContainer: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    paddingHorizontal: 12,
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: '#e2e8f0',
   },
   searchInput: {
     flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
+    paddingHorizontal: 12,
     fontSize: 16,
-    color: '#111827',
+    color: '#1f2937',
   },
   searchBtn: {
     backgroundColor: '#1e3a8a',
@@ -1112,12 +1301,6 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 16,
     alignItems: 'center',
-  },
-  errorText: {
-    color: '#dc2626',
-    fontSize: 14,
-    textAlign: 'center',
-    marginBottom: 8,
   },
   retryBtn: {
     backgroundColor: '#dc2626',

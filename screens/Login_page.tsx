@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,6 @@ import {
 import auth, { getAuth } from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import CryptoJS from 'crypto-js';
 import {
   Phone,
   ArrowRight,
@@ -29,12 +28,14 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react-native';
+import { useNavigation } from '../App';
 
 type LoginStep = 'method' | 'password' | 'phone' | 'otp' | 'success';
 type LoginMethod = 'password' | 'otp';
 
-export function LoginPage({ navigation, route }: any) {
-  const userType = route?.params?.userType || 'wholesale'; // default to wholesaler
+export function LoginPage({ userType: propUserType }: { userType?: string }) {
+  const navigation = useNavigation();
+  const userType = propUserType || navigation.params?.userType || 'wholesale'; // default to wholesaler
 
   const [currentStep, setCurrentStep] = useState<LoginStep>('method');
   const [loginMethod, setLoginMethod] = useState<LoginMethod>('password');
@@ -49,7 +50,75 @@ export function LoginPage({ navigation, route }: any) {
   const [confirmation, setConfirmation] = useState<any>(null);
   const [userTypeState, setUserTypeState] = useState<string | null>(null);
   const [phone, setPhone] = useState('');
+  const [showOtp, setShowOtp] = useState(false);
+  const [hasNavigated, setHasNavigated] = useState(false);
   const successPulse = useRef(new Animated.Value(1)).current;
+  
+  // Stable TextInput components to prevent re-renders
+  const PasswordPhoneInput = React.memo(() => (
+    <TextInput
+      value={passwordPhone}
+      onChangeText={(text) => setPasswordPhone(text.replace(/\D/g, '').slice(0, 10))}
+      keyboardType="number-pad"
+      placeholder="Enter 10-digit mobile number"
+      style={styles.phoneInput}
+      maxLength={10}
+      autoFocus={true}
+      returnKeyType="next"
+      blurOnSubmit={false}
+      autoCorrect={false}
+      autoCapitalize="none"
+    />
+  ));
+
+  const PasswordInput = React.memo(() => (
+    <TextInput
+      value={password}
+      onChangeText={setPassword}
+      placeholder="Enter your password"
+      style={styles.passwordInput}
+      secureTextEntry={!showPassword}
+      maxLength={32}
+      returnKeyType="done"
+      blurOnSubmit={true}
+      autoCorrect={false}
+      autoCapitalize="none"
+    />
+  ));
+
+  const OtpPhoneInput = React.memo(() => (
+    <TextInput
+      value={otpPhone}
+      onChangeText={(text) => setOtpPhone(text.replace(/\D/g, '').slice(0, 10))}
+      keyboardType="number-pad"
+      placeholder="Enter 10-digit mobile number"
+      style={styles.phoneInput}
+      maxLength={10}
+      autoFocus={true}
+      returnKeyType="next"
+      blurOnSubmit={false}
+      autoCorrect={false}
+      autoCapitalize="none"
+    />
+  ));
+
+  const OtpCodeInput = React.memo(() => (
+    <TextInput
+      value={otpCode}
+      onChangeText={(text) => setOtpCode(text.replace(/\D/g, '').slice(0, 6))}
+      keyboardType="number-pad"
+      placeholder="Enter 6-digit OTP"
+      style={styles.otpInputField}
+      maxLength={6}
+      autoFocus={true}
+      secureTextEntry={!showOtp}
+      placeholderTextColor="#9ca3af"
+      returnKeyType="done"
+      blurOnSubmit={true}
+      autoCorrect={false}
+      autoCapitalize="none"
+    />
+  ));
 
   // OTP Timer countdown
   useEffect(() => {
@@ -81,14 +150,17 @@ export function LoginPage({ navigation, route }: any) {
     }
     setIsLoading(true);
     try {
-      const response = await fetch(
-        'https://asia-south1-vm-authentication-4d4ea.cloudfunctions.net/loginWithPassword',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone: passwordPhone, password }),
-        }
-      );
+      // Use the correct endpoint based on userType
+      const endpoint = userType === 'retail' 
+        ? 'https://asia-south1-vm-authentication-4d4ea.cloudfunctions.net/loginWithPassword/retailer-login'
+        : 'https://asia-south1-vm-authentication-4d4ea.cloudfunctions.net/loginWithPassword';
+      
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: passwordPhone, password }),
+      });
+      
       if (!response.ok) {
         const errorText = await response.text();
         Alert.alert('Error', errorText || 'Login failed');
@@ -98,15 +170,9 @@ export function LoginPage({ navigation, route }: any) {
       const { token } = await response.json();
       await auth().signInWithCustomToken(token);
 
-      // Fetch userType from Firestore
-      const collectionName = userType === 'retail' ? 'retailer' : 'wholesaler';
-      const userDoc = await firestore().collection(collectionName).doc(passwordPhone).get();
-      const userTypeFromDb = userDoc.exists ? userDoc.data().userType : null;
-      setUserTypeState(userTypeFromDb);
-
-      setCurrentStep('success');
-      
       // Store the user type for future reference
+      setUserTypeState(userType);
+      
       try {
         await AsyncStorage.setItem(`userType_${passwordPhone}`, userType);
         console.log(`Stored user type: ${userType} for phone: ${passwordPhone}`);
@@ -114,8 +180,9 @@ export function LoginPage({ navigation, route }: any) {
         console.log('Error storing user type:', error);
       }
       
-      // Let App.tsx handle the navigation based on user type
-      console.log('Login successful, App.tsx will handle navigation');
+      // Set success step to show success message and auto-navigate
+      setCurrentStep('success');
+      console.log('Login successful, showing success step');
     } catch (err) {
       Alert.alert('Error', 'Login failed');
     }
@@ -143,6 +210,7 @@ export function LoginPage({ navigation, route }: any) {
       setOtpTimer(30);
       setCanResendOtp(false);
       setOtpCode('');
+      setShowOtp(false);
       Alert.alert('OTP Sent', 'Check your SMS for the OTP');
     } catch (err) {
       Alert.alert('Error', 'Failed to send OTP');
@@ -188,6 +256,7 @@ export function LoginPage({ navigation, route }: any) {
       setOtpTimer(30);
       setCanResendOtp(false);
       setOtpCode('');
+      setShowOtp(false);
       Alert.alert('OTP Sent', 'Check your SMS for the OTP');
     } catch (err) {
       Alert.alert('Error', 'Failed to resend OTP');
@@ -259,10 +328,6 @@ export function LoginPage({ navigation, route }: any) {
   );
 
   const PasswordStep = () => {
-    const handlePhoneChange = (text: string) => {
-      setPasswordPhone(text.replace(/\D/g, '').slice(0, 10));
-    };
-
     return (
       <View style={styles.card}>
         <View style={styles.cardBody}>
@@ -278,28 +343,13 @@ export function LoginPage({ navigation, route }: any) {
               <Text style={styles.label}>Phone Number</Text>
               <View style={styles.phoneRow}>
                 <Text style={styles.prefix}>+91</Text>
-                <TextInput
-                  value={passwordPhone}
-                  onChangeText={handlePhoneChange}
-                  keyboardType="number-pad"
-                  placeholder="Enter 10-digit mobile number"
-                  style={styles.phoneInput}
-                  maxLength={10}
-                  autoFocus={true}
-                />
+                <PasswordPhoneInput />
               </View>
             </View>
             <View style={{ marginBottom: 12 }}>
               <Text style={styles.label}>Password</Text>
               <View style={styles.passwordRow}>
-                <TextInput
-                  value={password}
-                  onChangeText={setPassword}
-                  placeholder="Enter your password"
-                  style={styles.passwordInput}
-                  secureTextEntry={!showPassword}
-                  maxLength={32}
-                />
+                <PasswordInput />
                 <TouchableOpacity
                   onPress={() => setShowPassword(!showPassword)}
                   style={styles.eyeBtn}
@@ -353,10 +403,6 @@ export function LoginPage({ navigation, route }: any) {
   };
 
   const PhoneStep = () => {
-    const handlePhoneChange = (text: string) => {
-      setOtpPhone(text.replace(/\D/g, '').slice(0, 10));
-    };
-
     return (
       <View style={styles.card}>
         <View style={styles.cardBody}>
@@ -371,15 +417,7 @@ export function LoginPage({ navigation, route }: any) {
             <Text style={styles.label}>Phone Number</Text>
             <View style={styles.phoneRow}>
               <Text style={styles.prefix}>+91</Text>
-              <TextInput
-                value={otpPhone}
-                onChangeText={handlePhoneChange}
-                keyboardType="number-pad"
-                placeholder="Enter 10-digit mobile number"
-                style={styles.phoneInput}
-                maxLength={10}
-                autoFocus={true}
-              />
+              <OtpPhoneInput />
             </View>
             <TouchableOpacity
               onPress={handleSendOtp}
@@ -419,10 +457,6 @@ export function LoginPage({ navigation, route }: any) {
   };
 
   const OtpStep = () => {
-    const handleOtpChange = (text: string) => {
-      setOtpCode(text.replace(/\D/g, '').slice(0, 6));
-    };
-
     return (
       <View style={styles.card}>
         <View style={styles.cardBody}>
@@ -439,15 +473,19 @@ export function LoginPage({ navigation, route }: any) {
           <View>
             <View style={{ marginBottom: 12 }}>
               <Text style={styles.label}>Enter OTP</Text>
-              <TextInput
-                value={otpCode}
-                onChangeText={handleOtpChange}
-                keyboardType="number-pad"
-                placeholder="Enter 6-digit OTP"
-                style={styles.phoneInput}
-                maxLength={6}
-                autoFocus={true}
-              />
+              <View style={styles.otpInputContainer}>
+                <OtpCodeInput />
+                <TouchableOpacity
+                  onPress={() => setShowOtp(!showOtp)}
+                  style={styles.otpEyeBtn}
+                >
+                  {showOtp ? (
+                    <EyeOff color="#888" size={20} />
+                  ) : (
+                    <Eye color="#888" size={20} />
+                  )}
+                </TouchableOpacity>
+              </View>
             </View>
             <View style={{ marginBottom: 12 }}>
               <TouchableOpacity
@@ -517,27 +555,48 @@ export function LoginPage({ navigation, route }: any) {
     );
   };
 
-  const SuccessStep = () => (
-    <View style={styles.card}>
-      <View style={styles.cardBody}>
-        <View style={styles.headerCenter}>
-          <Animated.View
-            style={[styles.iconCircleGreen, { transform: [{ scale: successPulse }] }]}
-          >
-            <CheckCircle color="#16a34a" size={32} />
-          </Animated.View>
-          <Text style={styles.successTitle}>Login Successful!</Text>
-          <Text style={styles.muted}>
-            {userType === 'retail'
-              ? 'Welcome back to your retailer dashboard'
-              : 'Welcome back to your wholesaler dashboard'}
-          </Text>
-        </View>
+  const SuccessStep = () => {
+    // Auto-navigate after showing success message
+    useEffect(() => {
+      if (hasNavigated) return; // Prevent multiple navigations
+      
+      const timer = setTimeout(() => {
+        console.log('Auto-navigating to dashboard...');
+        setHasNavigated(true);
+        if (userType === 'wholesale') {
+          navigation.navigate('WholesalerDashboard');
+        } else {
+          navigation.navigate('RetailerDashboard');
+        }
+      }, 2000); // 2 seconds delay
+
+      return () => clearTimeout(timer);
+    }, [userType, hasNavigated]);
+
+    return (
+      <View style={styles.card}>
+        <View style={styles.cardBody}>
+          <View style={styles.headerCenter}>
+            <Animated.View
+              style={[styles.iconCircleGreen, { transform: [{ scale: successPulse }] }]}
+            >
+              <CheckCircle color="#16a34a" size={32} />
+            </Animated.View>
+            <Text style={styles.successTitle}>Login Successful!</Text>
+            <Text style={styles.muted}>
+              {userType === 'retail'
+                ? 'Welcome back to your retailer dashboard'
+                : 'Welcome back to your wholesaler dashboard'}
+            </Text>
+            <Text style={[styles.muted, { marginTop: 8, fontSize: 12 }]}>
+              Redirecting to dashboard...
+            </Text>
+          </View>
         <View style={styles.successBox}>
           <View style={styles.rowBetween}>
             <Text style={styles.kvLabel}>Phone Number</Text>
             <Text style={styles.badgeSecondary}>
-              +91 {currentStep === 'password' ? passwordPhone : otpPhone}
+              +91 {passwordPhone || otpPhone}
             </Text>
           </View>
           <View style={styles.rowBetween}>
@@ -553,7 +612,8 @@ export function LoginPage({ navigation, route }: any) {
         </View>
       </View>
     </View>
-  );
+    );
+  };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
@@ -636,6 +696,29 @@ const styles = StyleSheet.create({
   },
   prefix: { color: '#6b7280', marginRight: 8 },
   phoneInput: { flex: 1, fontSize: 16, color: '#111827' },
+  otpInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 10,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    marginTop: 8,
+    height: 48,
+    paddingHorizontal: 12,
+  },
+  otpInputField: {
+    flex: 1,
+    fontSize: 20,
+    color: '#111827',
+    letterSpacing: 4,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  otpEyeBtn: { 
+    padding: 4,
+    marginLeft: 8,
+  },
   passwordRow: {
     flexDirection: 'row',
     alignItems: 'center',

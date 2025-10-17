@@ -8,7 +8,6 @@ import {
   Animated,
   StatusBar,
 } from 'react-native';
-import LinearGradient from 'react-native-linear-gradient';
 
 const { width, height } = Dimensions.get('window');
 
@@ -72,12 +71,7 @@ export default function SplashScreen() {
   }, []);
 
   return (
-    <LinearGradient
-      colors={['#fb923c', '#fbbf24', '#fde047']}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={styles.container}
-    >
+    <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#fb923c" />
       
       <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
@@ -150,7 +144,7 @@ export default function SplashScreen() {
       <View style={[styles.bgDecoration, styles.bgDecorationTopLeft]} />
       <View style={[styles.bgDecoration, styles.bgDecorationBottomRight]} />
       <View style={[styles.bgDecoration, styles.bgDecorationTopRight]} />
-    </LinearGradient>
+    </View>
   );
 }
 
@@ -160,6 +154,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 24,
+    backgroundColor: '#fb923c',
   },
   content: {
     alignItems: 'center',

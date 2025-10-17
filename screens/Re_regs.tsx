@@ -1,29 +1,27 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Alert } from 'react-native';
-import { useRoute } from '@react-navigation/native';
 import { CheckCircle, Store, Truck, DollarSign, ArrowRight } from 'lucide-react-native';
-import LinearGradient from 'react-native-linear-gradient';
 import auth from '@react-native-firebase/auth';
+import { useNavigation } from '../App';
 
 type RouteParams = {
   userType?: string;
   docName?: string;
 };
 
-export default function RetailerSuccessPage({ navigation }: any) {
-  const route = useRoute();
-  const { userType, docName } = (route.params as RouteParams) || {};
+export default function RetailerSuccessPage() {
+  const navigation = useNavigation();
+  const { userType, docName } = (navigation.params as RouteParams) || {};
 
   const handleContinue = () => {
-    navigation.replace('Login');
+    navigation.navigate('Login');
   };
 
   return (
     <View style={styles.container}>
       {/* Gradient Background */}
-      <LinearGradient
-        colors={['#fb923c', '#fbbf24', '#fde047']}
-        style={StyleSheet.absoluteFill}
+      <View
+        style={[StyleSheet.absoluteFill, { backgroundColor: '#fb923c' }]}
       />
 
       {/* Content Container */}

@@ -1,23 +1,15 @@
 import React from "react";
 import { View, Text, StyleSheet, ScrollView, Image } from "react-native";
-import LinearGradient from "react-native-linear-gradient";
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Card } from "./components/ui/card";
 import { Button } from "./components/ui/button";
 import auth from '@react-native-firebase/auth';
+import { useNavigation } from './App';
 
-import type { StackNavigationProp } from '@react-navigation/stack';
-
-type HomePageLoginProps = {
-  navigation: StackNavigationProp<any>;
-};
-
-export default function Home_Page_Login({ navigation }: HomePageLoginProps) {
+export default function Home_Page_Login() {
+  const navigation = useNavigation();
   return (
-    <LinearGradient
-      colors={["#FF8C00", "#FFB347", "#FFD580"]}
-      style={styles.gradient}
-    >
+    <View style={styles.gradient}>
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.container}>
           {/* Logo */}
@@ -85,13 +77,14 @@ export default function Home_Page_Login({ navigation }: HomePageLoginProps) {
           </View>
         </View>
       </ScrollView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   gradient: {
     flex: 1,
+    backgroundColor: '#FF8C00',
   },
   scrollContainer: {
     flexGrow: 1,

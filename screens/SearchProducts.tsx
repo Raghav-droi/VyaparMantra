@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, FlatList, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, FlatList, ActivityIndicator, StyleSheet, StatusBar } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import firestore from '@react-native-firebase/firestore';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation } from '../App';
 
 type ProductDoc = {
   id: string;
@@ -36,7 +37,7 @@ export default function SearchProducts() {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<ProductDoc[]>([]);
 
-  const normalizedQuery = useMemo(() => query.trim().toUpperCase(), [query]);
+  const normalizedQuery = useMemo(() => query.trim().toLowerCase(), [query]);
 
   const runSearch = async () => {
     setLoading(true);
@@ -44,38 +45,66 @@ export default function SearchProducts() {
       const db = firestore();
       let ref = db.collection('products');
 
-      const filters: Promise<FirebaseFirestoreTypes.QuerySnapshot> | null = null;
-
-      // We support either category filter, name search, or both (category + prefix range on searchName)
-      if (category !== 'ALL' && normalizedQuery) {
-        const snap = await ref
-          .where('category', '==', category)
-          .where('searchName', '>=', normalizedQuery)
-          .where('searchName', '<=', normalizedQuery + '\uf8ff')
-          .limit(20)
-          .get();
-        setResults(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as any);
-      } else if (category !== 'ALL') {
-        const snap = await ref.where('category', '==', category).limit(30).get();
-        setResults(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as any);
-      } else if (normalizedQuery) {
-        const snap = await ref
-          .where('searchName', '>=', normalizedQuery)
-          .where('searchName', '<=', normalizedQuery + '\uf8ff')
-          .limit(30)
-          .get();
-        setResults(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as any);
-      } else {
-        // Default: show a few featured/recent
-        const snap = await ref.orderBy('createdAt', 'desc').limit(20).get();
-        setResults(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as any);
+      // Apply category filter first
+      if (category !== 'ALL') {
+        ref = ref.where('category', '==', category) as any;
       }
+
+      // Apply search filter - case insensitive partial search
+      if (normalizedQuery) {
+        ref = ref.where('searchName', '>=', normalizedQuery)
+                 .where('searchName', '<=', normalizedQuery + '\uf8ff') as any;
+      }
+
+      const snap = await ref.limit(50).get();
+      let searchResults = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as any;
+
+      // If we have a search query, also do a more flexible search
+      if (normalizedQuery && searchResults.length < 10) {
+        // Get all products in category (or all if no category)
+        let allRef = db.collection('products');
+        if (category !== 'ALL') {
+          allRef = allRef.where('category', '==', category) as any;
+        }
+        
+        const allSnap = await allRef.limit(100).get();
+        const allProducts = allSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as any;
+        
+        // Filter products that contain the search term (case insensitive)
+        const flexibleResults = allProducts.filter((product: any) => {
+          const productName = (product.name || '').toLowerCase();
+          const productSearchName = (product.searchName || '').toLowerCase();
+          return productName.includes(normalizedQuery) || productSearchName.includes(normalizedQuery);
+        });
+
+        // Combine and deduplicate results
+        const combinedResults = [...searchResults];
+        flexibleResults.forEach((product: any) => {
+          if (!combinedResults.find(r => r.id === product.id)) {
+            combinedResults.push(product);
+          }
+        });
+
+        searchResults = combinedResults.slice(0, 50);
+      }
+
+      setResults(searchResults);
     } catch (e) {
+      console.error('Search error:', e);
       setResults([]);
     } finally {
       setLoading(false);
     }
   };
+
+  // Debounced search effect
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      runSearch();
+    }, 300); // 300ms delay for search
+
+    return () => clearTimeout(timer);
+  }, [query, category]);
 
   useEffect(() => {
     // initial fetch
@@ -84,14 +113,17 @@ export default function SearchProducts() {
   }, []);
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff' }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }} edges={['top']}>
+      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       <View style={styles.searchBar}>
         <TextInput
           style={styles.searchInput}
-          placeholder="Search by product name"
+          placeholder="Search products (e.g., rice, apple, milk)..."
           value={query}
           onChangeText={setQuery}
           onSubmitEditing={runSearch}
+          autoCorrect={false}
+          autoCapitalize="none"
         />
         <TouchableOpacity style={styles.searchBtn} onPress={runSearch}>
           <Text style={styles.searchBtnText}>Search</Text>
@@ -137,7 +169,7 @@ export default function SearchProducts() {
           )}
         />
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 

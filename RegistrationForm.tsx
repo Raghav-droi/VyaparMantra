@@ -12,7 +12,6 @@ import {
   Keyboard,
   Platform,
 } from 'react-native';
-import LinearGradient from 'react-native-linear-gradient';
 import Checkbox from '@react-native-community/checkbox';
 import DropDownPicker from 'react-native-dropdown-picker';
 import Geolocation from '@react-native-community/geolocation';
@@ -25,6 +24,7 @@ import OtpModal from './components/OtpModal';
 import WholesalerFields from './components/WholesalerFields';
 import FormInput from './components/FormInput';
 import uuid from 'react-native-uuid';
+import { useNavigation } from './App';
 
 interface FormData {
   userType: 'wholesale' | 'retail';
@@ -43,7 +43,8 @@ interface FormData {
   termsAccepted: boolean;
 }
 
-export default function RegistrationForm({ navigation }: any) {
+export default function RegistrationForm() {
+  const navigation = useNavigation();
   const [formData, setFormData] = useState<FormData>({
     userType: 'retail',
     businessOwnerName: '',
@@ -233,7 +234,7 @@ export default function RegistrationForm({ navigation }: any) {
         uuid: uuid.v4(),
         createdAt: new Date(),
       });
-      navigation.replace('Re_regs', { userType: formData.userType, docName });
+      navigation.navigate('Re_regs', { userType: formData.userType, docName });
     } catch (error) {
       console.error('Registration error:', error);
       Alert.alert('Error', 'Registration failed. Please try again.');
@@ -259,7 +260,7 @@ export default function RegistrationForm({ navigation }: any) {
   }, []);
 
   return (
-    <LinearGradient colors={["#FF8C00", "#FFB347", "#FFD580"]} style={styles.gradient}>
+    <View style={styles.gradient}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -474,13 +475,14 @@ export default function RegistrationForm({ navigation }: any) {
         onCancel={() => setShowOtpModal(false)}
         onVerify={handleVerifyOTP}
       />
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   gradient: {
     flex: 1,
+    backgroundColor: '#FF8C00',
   },
   scrollContainer: {
     flexGrow: 1,

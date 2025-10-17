@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, ActivityIndicator, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
-import { useRoute, useNavigation } from '@react-navigation/native';
+import { useNavigation } from '../App';
 import { getAuth } from '@react-native-firebase/auth';
 
 type RouteParams = { productId: string; name?: string };
@@ -16,9 +16,8 @@ type WholesalerOffer = {
 };
 
 export default function ProductDetails() {
-  const route = useRoute();
-  const navigation = useNavigation<any>();
-  const { productId } = (route.params as RouteParams) || {};
+  const navigation = useNavigation();
+  const { productId } = (navigation.params as RouteParams) || {};
   const [loading, setLoading] = useState(true);
   const [product, setProduct] = useState<any>(null);
   const [offers, setOffers] = useState<WholesalerOffer[]>([]);

@@ -1,7 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack';
-import { BackHandler, ToastAndroid } from 'react-native';
+import React, { useEffect, useState, createContext, useContext } from 'react';
+import { BackHandler, ToastAndroid, View } from 'react-native';
 import { getAuth, onAuthStateChanged } from '@react-native-firebase/auth';
 import { getFirestore, doc, getDoc } from '@react-native-firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -17,20 +15,22 @@ import SearchProducts from './screens/SearchProducts';
 import ProductDetails from './screens/ProductDetails';
 import OrderTracking from './screens/OrderTracking';
 
-export type RootStackParamList = {
-  Splash: undefined;
-  Home: undefined;
-  Login: undefined;
-  RegistrationForm: undefined;
-  WholesalerDashboard: { userId?: string };
-  RetailerDashboard: { userId?: string };
-  Re_regs: { userType?: string; docName?: string };
-  SearchProducts: undefined;
-  ProductDetails: undefined;
-  OrderTracking: undefined;
+// Navigation Context
+type NavigationContextType = {
+  navigate: (screen: string, params?: any) => void;
+  goBack: () => void;
+  currentScreen: string;
+  params: any;
 };
 
-const Stack = createStackNavigator<RootStackParamList>();
+const NavigationContext = createContext<NavigationContextType>({
+  navigate: () => {},
+  goBack: () => {},
+  currentScreen: 'Home',
+  params: {},
+});
+
+export const useNavigation = () => useContext(NavigationContext);
 
 const App = () => {
   const [loading, setLoading] = useState(true);
@@ -39,6 +39,9 @@ const App = () => {
   const [userType, setUserType] = useState<string | null>(null);
   const [backPressedOnce, setBackPressedOnce] = useState(false);
   const [initialRoute, setInitialRoute] = useState<string | null>(null);
+  const [currentScreen, setCurrentScreen] = useState<string>('Home');
+  const [screenParams, setScreenParams] = useState<any>({});
+  const [navigationHistory, setNavigationHistory] = useState<Array<{screen: string, params: any}>>([]);
 
   useEffect(() => {
     // Show splash for 3 seconds
@@ -51,81 +54,122 @@ const App = () => {
 
   useEffect(() => {
     console.log('App loaded, checking user...');
-    const unsubscribe = onAuthStateChanged(getAuth(), async (firebaseUser) => {
-      console.log('Auth state changed:', firebaseUser);
-      setUser(firebaseUser);
-      setLoading(false);
-      if (firebaseUser?.phoneNumber) {
-        const phone = firebaseUser.phoneNumber.replace('+91', '');
-        const db = getFirestore();
-        console.log('Checking user type for phone:', phone);
-        
-        // Since both users have the same phone number, we need to check both collections
-        // and determine which one was used for login
-        const wholesalerDoc = await getDoc(doc(db, 'wholesaler', phone));
-        const retailerDoc = await getDoc(doc(db, 'retailer', phone));
-        
-        // If user exists in both collections, check stored login context
-        if (wholesalerDoc.exists() && retailerDoc.exists()) {
-          console.log('User exists in both collections, checking stored login context...');
-          
-          try {
-            const storedUserType = await AsyncStorage.getItem(`userType_${phone}`);
-            if (storedUserType === 'wholesale') {
-              console.log('Stored context: wholesaler');
-              setUserType('wholesale');
-              setInitialRoute('WholesalerDashboard');
-              return;
-            } else if (storedUserType === 'retail') {
-              console.log('Stored context: retailer');
-              setUserType('retail');
-              setInitialRoute('RetailerDashboard');
-              return;
-            } else {
-              console.log('No stored context, defaulting to wholesaler');
-              setUserType('wholesale');
-              setInitialRoute('WholesalerDashboard');
-              return;
+    const auth = getAuth();
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      console.log('Auth state changed:', currentUser);
+      console.log('Current user phone:', currentUser?.phoneNumber);
+      setUser(currentUser);
+
+      if (currentUser) {
+        try {
+          const phoneNumber = currentUser.phoneNumber?.replace('+91', '');
+          console.log('Checking user type for phone:', phoneNumber);
+
+          let storedUserType = null;
+          let foundPhoneNumber = phoneNumber;
+
+          if (phoneNumber) {
+            // User has phone number in auth object
+            storedUserType = await AsyncStorage.getItem(`userType_${phoneNumber}`);
+            console.log('Stored user type:', storedUserType, 'for phone:', phoneNumber);
+          } else {
+            // User doesn't have phone number, check all stored user types
+            console.log('No phone number in auth object, checking all stored user types');
+            const keys = await AsyncStorage.getAllKeys();
+            const userTypeKeys = keys.filter(key => key.startsWith('userType_'));
+            
+            if (userTypeKeys.length > 0) {
+              // Get the most recent user type
+              const latestKey = userTypeKeys[userTypeKeys.length - 1];
+              storedUserType = await AsyncStorage.getItem(latestKey);
+              foundPhoneNumber = latestKey.replace('userType_', '');
+              console.log('Found stored user type:', storedUserType, 'for phone:', foundPhoneNumber);
             }
-          } catch (error) {
-            console.log('Error reading stored context, defaulting to wholesaler');
-            setUserType('wholesale');
-            setInitialRoute('WholesalerDashboard');
-            return;
           }
+
+          if (storedUserType) {
+            setUserType(storedUserType);
+            if (storedUserType === 'wholesale') {
+              console.log('Setting route to WholesalerDashboard');
+              setInitialRoute('WholesalerDashboard');
+              setCurrentScreen('WholesalerDashboard');
+            } else {
+              console.log('Setting route to RetailerDashboard');
+              setInitialRoute('RetailerDashboard');
+              setCurrentScreen('RetailerDashboard');
+            }
+          } else {
+            const db = getFirestore();
+            // Try to find user by phone number first
+            const userDoc = await getDoc(doc(db, 'users', foundPhoneNumber));
+
+            if (userDoc.exists()) {
+              const userData = userDoc.data();
+              const fetchedUserType = userData?.userType;
+              console.log('Fetched user type from Firestore:', fetchedUserType);
+
+              if (fetchedUserType) {
+                setUserType(fetchedUserType);
+                await AsyncStorage.setItem(`userType_${foundPhoneNumber}`, fetchedUserType);
+
+                if (fetchedUserType === 'wholesale') {
+                  setInitialRoute('WholesalerDashboard');
+                  setCurrentScreen('WholesalerDashboard');
+                } else {
+                  setInitialRoute('RetailerDashboard');
+                  setCurrentScreen('RetailerDashboard');
+                }
+              }
+            } else {
+              // Fallback: try to find by UID
+              const userDocByUid = await getDoc(doc(db, 'users', currentUser.uid));
+              if (userDocByUid.exists()) {
+                const userData = userDocByUid.data();
+                const fetchedUserType = userData?.userType;
+                console.log('Fetched user type from Firestore by UID:', fetchedUserType);
+
+                if (fetchedUserType) {
+                  setUserType(fetchedUserType);
+                  await AsyncStorage.setItem(`userType_${foundPhoneNumber}`, fetchedUserType);
+
+                  if (fetchedUserType === 'wholesale') {
+                    setInitialRoute('WholesalerDashboard');
+                    setCurrentScreen('WholesalerDashboard');
+                  } else {
+                    setInitialRoute('RetailerDashboard');
+                    setCurrentScreen('RetailerDashboard');
+                  }
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching user type:', error);
         }
-        
-        // Check wholesaler first
-        if (wholesalerDoc.exists()) {
-          console.log('User is wholesaler, setting route to WholesalerDashboard');
-          setUserType('wholesale');
-          setInitialRoute('WholesalerDashboard');
-          return;
-        }
-        
-        // Check retailer
-        if (retailerDoc.exists()) {
-          console.log('User is retailer, setting route to RetailerDashboard');
-          setUserType('retail');
-          setInitialRoute('RetailerDashboard');
-          return;
-        }
-        
-        console.log('No user type found for phone:', phone);
-        setUserType(null);
-        setInitialRoute(null);
       } else {
-        console.log('No phone number found');
         setUserType(null);
         setInitialRoute(null);
+        setCurrentScreen('Home');
       }
+
+      setLoading(false);
     });
-    return unsubscribe;
+
+    return () => unsubscribe();
   }, []);
 
   useEffect(() => {
+    if (user && initialRoute) {
+      console.log('Navigating to:', initialRoute);
+      setCurrentScreen(initialRoute);
+    }
+  }, [user, initialRoute]);
+
+  // Back button handler
+  useEffect(() => {
     const onBackPress = () => {
-      if (user) {
+      // If user is logged in and on dashboard, prevent going back to login
+      if (user && (currentScreen === 'RetailerDashboard' || currentScreen === 'WholesalerDashboard')) {
         if (backPressedOnce) {
           BackHandler.exitApp();
         } else {
@@ -135,45 +179,104 @@ const App = () => {
           return true;
         }
       }
+
+      // If user is not logged in, allow normal navigation
+      if (!user) {
+        if (navigationHistory.length > 0) {
+          // Navigate back in history
+          const previous = navigationHistory[navigationHistory.length - 1];
+          setNavigationHistory(navigationHistory.slice(0, -1));
+          setCurrentScreen(previous.screen);
+          setScreenParams(previous.params);
+          return true;
+        }
+        return false;
+      }
+
+      // For other logged-in screens, allow back navigation within the app
+      if (navigationHistory.length > 0) {
+        const previous = navigationHistory[navigationHistory.length - 1];
+        // Don't allow going back to login/home screens
+        if (previous.screen === 'Login' || previous.screen === 'Home') {
+          return true; // Block the navigation
+        }
+        setNavigationHistory(navigationHistory.slice(0, -1));
+        setCurrentScreen(previous.screen);
+        setScreenParams(previous.params);
+        return true;
+      }
+
       return false;
     };
     const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
     return () => subscription.remove();
-  }, [user, backPressedOnce]);
+  }, [user, backPressedOnce, navigationHistory, currentScreen]);
 
   if (showSplash || loading) {
     return <SplashScreen />;
   }
 
-  // Determine initial route
-  const getInitialRouteName = () => {
-    if (!user) return 'Home';
-    if (initialRoute) return initialRoute;
-    return 'Home';
+  // Navigation functions
+  const navigate = (screen: string, params: any = {}) => {
+    // Clear navigation history when navigating to dashboards (after login)
+    if (screen === 'RetailerDashboard' || screen === 'WholesalerDashboard') {
+      setNavigationHistory([]);
+    } else {
+      setNavigationHistory([...navigationHistory, { screen: currentScreen, params: screenParams }]);
+    }
+    setCurrentScreen(screen);
+    setScreenParams(params);
+  };
+
+  const goBack = () => {
+    if (navigationHistory.length > 0) {
+      const previous = navigationHistory[navigationHistory.length - 1];
+      setNavigationHistory(navigationHistory.slice(0, -1));
+      setCurrentScreen(previous.screen);
+      setScreenParams(previous.params);
+    }
+  };
+
+  const navigationValue = {
+    navigate,
+    goBack,
+    currentScreen,
+    params: screenParams,
+  };
+
+  // Render current screen
+  const renderScreen = () => {
+    console.log('Rendering screen:', currentScreen);
+    switch (currentScreen) {
+      case 'Home':
+        return <Home_Page_Login />;
+      case 'Login':
+        return <LoginPage userType={screenParams.userType || 'retail'} />;
+      case 'RegistrationForm':
+        return <RegistrationForm />;
+      case 'Re_regs':
+        return <RetailerSuccessPage />;
+      case 'WholesalerDashboard':
+        return <WholesalerDashboard />;
+      case 'RetailerDashboard':
+        return <RetailerDashboard />;
+      case 'SearchProducts':
+        return <SearchProducts />;
+      case 'ProductDetails':
+        return <ProductDetails />;
+      case 'OrderTracking':
+        return <OrderTracking />;
+      default:
+        return <Home_Page_Login />;
+    }
   };
 
   return (
-    <NavigationContainer>
-      <Stack.Navigator 
-        initialRouteName={getInitialRouteName()}
-        screenOptions={{ headerShown: false }}
-      >
-        {!user && (
-          <>
-            <Stack.Screen name="Home" component={Home_Page_Login} />
-            <Stack.Screen name="Login" component={LoginPage} />
-            <Stack.Screen name="RegistrationForm" component={RegistrationForm} />
-            <Stack.Screen name="Re_regs" component={RetailerSuccessPage} />
-          </>
-        )}
-        {/* Always register both dashboard screens */}
-        <Stack.Screen name="WholesalerDashboard" component={WholesalerDashboard} />
-        <Stack.Screen name="RetailerDashboard" component={RetailerDashboard} />
-        <Stack.Screen name="SearchProducts" component={SearchProducts} />
-        <Stack.Screen name="ProductDetails" component={ProductDetails} />
-        <Stack.Screen name="OrderTracking" component={OrderTracking} />
-      </Stack.Navigator>
-    </NavigationContainer>
+    <NavigationContext.Provider value={navigationValue}>
+      <View style={{ flex: 1 }}>
+        {renderScreen()}
+      </View>
+    </NavigationContext.Provider>
   );
 };
 

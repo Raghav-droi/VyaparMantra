@@ -1,15 +1,19 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, TouchableOpacity, ActivityIndicator, Modal, ScrollView } from "react-native";
+import { View, Text, TouchableOpacity, ActivityIndicator, Modal, ScrollView, StatusBar } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import LinearGradient from "react-native-linear-gradient";
 import { 
-  Bell, Shield, ShoppingCart, Clock, DollarSign, Package, CheckCircle, X, ArrowRight, ChevronLeft, ChevronRight, TrendingUp, Home, Settings, CreditCard, LogOut, Plus
+  Bell, Shield, ShoppingCart, Clock, DollarSign, Package, CheckCircle, X, ArrowRight, ChevronLeft, ChevronRight, TrendingUp, Home, Settings, CreditCard, LogOut, Plus, Menu
 } from "lucide-react-native";
 import { getAuth } from '@react-native-firebase/auth';
 import { getFirestore, doc, getDoc } from '@react-native-firebase/firestore';
+import ProfessionalHeader from '../components/ui/ProfessionalHeader';
+import AnimatedCard from '../components/ui/AnimatedCard';
+import AnimatedButton from '../components/ui/AnimatedButton';
+import { useNavigation } from '../App';
 const db = getFirestore();
 
-const WholesalerDashboard = ({ navigation }) => {
+const WholesalerDashboard = () => {
+  const navigation = useNavigation();
   const [loading, setLoading] = useState(true);
   const [tradeName, setTradeName] = useState("--");
   const [currentOrderPage, setCurrentOrderPage] = useState(1);
@@ -44,10 +48,10 @@ const WholesalerDashboard = ({ navigation }) => {
     if (!user?.phoneNumber) return;
     const fetchProfile = async () => {
       try {
-        const userDocRef = doc(db, 'wholesaler', user.phoneNumber.replace('+91', ''));
+        const userDocRef = doc(db, 'wholesaler', user.phoneNumber!.replace('+91', ''));
         const userSnap = await getDoc(userDocRef);
-        if (userSnap.exists() && userSnap.data().userType === "wholesale") {
-          setTradeName(userSnap.data().tradeName || "--");
+        if (userSnap.exists() && userSnap.data()?.userType === "wholesale") {
+          setTradeName(userSnap.data()?.tradeName || "--");
         } else {
           setTradeName("--");
         }
@@ -85,10 +89,7 @@ const WholesalerDashboard = ({ navigation }) => {
           style={{ marginTop: 20, alignSelf: 'center', backgroundColor: '#FF8C00', padding: 12, borderRadius: 8 }}
           onPress={async () => {
             await getAuth().signOut();
-            navigation.reset({
-              index: 0,
-              routes: [{ name: 'Home' }],
-            });
+            navigation.navigate('Home');
           }}
         >
           <Text style={{ color: '#fff', fontWeight: 'bold' }}>Go to Login</Text>
@@ -98,54 +99,47 @@ const WholesalerDashboard = ({ navigation }) => {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1 }}>
-      <LinearGradient colors={["#fb923c", "#fbbf24", "#fde047"]} style={{ position: "absolute", width: "100%", height: "100%" }} />
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 10, paddingTop: 40 }}>
-        {/* Top Bar */}
-        <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 10 }}>
-          <TouchableOpacity style={{ flexDirection: "row", alignItems: "center" }} onPress={() => setSidebarOpen(true)}>
-            <View style={{ width: 48, height: 48, borderRadius: 24, marginRight: 10, backgroundColor: "#eee" }} />
-            <View>
-              <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 18 }}>{tradeName}</Text>
-                <Shield stroke="#bae6fd" width={16} height={16} style={{ marginLeft: 6 }} />
-              </View>
-              <Text style={{ color: "#bae6fd" }}>Premium Verified</Text>
-            </View>
-          </TouchableOpacity>
-          <View style={{ position: "relative" }}>
-            <Bell stroke="#fff" width={24} height={24} />
-            <View style={{ position: "absolute", top: -4, right: -4, backgroundColor: "red", width: 12, height: 12, borderRadius: 6 }} />
-          </View>
-        </View>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#1e3a8a' }} edges={['top']}>
+      <StatusBar barStyle="light-content" backgroundColor="#1e3a8a" />
+      <View style={{ flex: 1, backgroundColor: '#f8fafc' }}>
+        <ProfessionalHeader
+        title="Wholesaler Dashboard"
+        subtitle={`${tradeName} • Premium Verified`}
+        onMenuPress={() => setSidebarOpen(true)}
+        onNotificationPress={() => {}}
+        notificationCount={3}
+        showGradient={true}
+      />
+      
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
 
         {/* Quick Stats */}
-        <View style={{ backgroundColor: "#fff", borderRadius: 14, marginVertical: 6, padding: 18, shadowColor: "#222", shadowOpacity: 0.15, shadowRadius: 7, elevation: 4 }}>
-          <Text style={{ fontSize: 16, color: "#111827", fontWeight: "bold", marginBottom: 8 }}>Today's Overview</Text>
+        <AnimatedCard animationType="fadeInUp" delay={0} style={{ marginBottom: 16 }}>
+          <Text style={{ fontSize: 18, color: "#111827", fontWeight: "bold", marginBottom: 16 }}>Today's Overview</Text>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <View style={{ alignItems: "center", flex: 1 }}>
-              <View style={{ width: 40, height: 40, borderRadius: 20, justifyContent: "center", alignItems: "center", marginBottom: 8, backgroundColor: "#DBEAFE" }}>
-                <ShoppingCart stroke="#2563eb" width={20} height={20} />
+              <View style={{ width: 48, height: 48, borderRadius: 24, justifyContent: "center", alignItems: "center", marginBottom: 12, backgroundColor: "#DBEAFE" }}>
+                <ShoppingCart stroke="#2563eb" width={24} height={24} />
               </View>
-              <Text style={{ fontSize: 18, color: "#1e3a8a", fontWeight: "600" }}>{mockStats.todayOrders}</Text>
-              <Text style={{ fontSize: 12, color: "#6b7280" }}>Today's Orders</Text>
+              <Text style={{ fontSize: 20, color: "#1e3a8a", fontWeight: "700" }}>{mockStats.todayOrders}</Text>
+              <Text style={{ fontSize: 12, color: "#6b7280", textAlign: 'center' }}>Today's Orders</Text>
             </View>
             <View style={{ alignItems: "center", flex: 1 }}>
-              <View style={{ width: 40, height: 40, borderRadius: 20, justifyContent: "center", alignItems: "center", marginBottom: 8, backgroundColor: "#FEF3C7" }}>
-                <Clock stroke="#fbbf24" width={20} height={20} />
+              <View style={{ width: 48, height: 48, borderRadius: 24, justifyContent: "center", alignItems: "center", marginBottom: 12, backgroundColor: "#FEF3C7" }}>
+                <Clock stroke="#fbbf24" width={24} height={24} />
               </View>
-              <Text style={{ fontSize: 18, color: "#1e3a8a", fontWeight: "600" }}>{mockStats.pendingConfirmations}</Text>
-              <Text style={{ fontSize: 12, color: "#6b7280" }}>Pending</Text>
+              <Text style={{ fontSize: 20, color: "#1e3a8a", fontWeight: "700" }}>{mockStats.pendingConfirmations}</Text>
+              <Text style={{ fontSize: 12, color: "#6b7280", textAlign: 'center' }}>Pending</Text>
             </View>
             <View style={{ alignItems: "center", flex: 1 }}>
-              <View style={{ width: 40, height: 40, borderRadius: 20, justifyContent: "center", alignItems: "center", marginBottom: 8, backgroundColor: "#DCFCE7" }}>
-                <DollarSign stroke="#16a34a" width={20} height={20} />
+              <View style={{ width: 48, height: 48, borderRadius: 24, justifyContent: "center", alignItems: "center", marginBottom: 12, backgroundColor: "#DCFCE7" }}>
+                <DollarSign stroke="#16a34a" width={24} height={24} />
               </View>
-              <Text style={{ fontSize: 18, color: "#1e3a8a", fontWeight: "600" }}>₹{mockStats.totalSales.toLocaleString()}</Text>
-              <Text style={{ fontSize: 12, color: "#6b7280" }}>Total Sales</Text>
+              <Text style={{ fontSize: 20, color: "#1e3a8a", fontWeight: "700" }}>₹{mockStats.totalSales.toLocaleString()}</Text>
+              <Text style={{ fontSize: 12, color: "#6b7280", textAlign: 'center' }}>Total Sales</Text>
             </View>
           </View>
-        </View>
+        </AnimatedCard>
 
         {/* New Order Requests */}
         <View style={{ marginTop: 18 }}>
@@ -221,7 +215,7 @@ const WholesalerDashboard = ({ navigation }) => {
         {/* Products Card */}
         <View style={{ marginTop: 24 }}>
           <Text style={{ fontSize: 16, color: "#111827", fontWeight: "500" }}>Your Products</Text>
-          <TouchableOpacity style={{ backgroundColor: "#fff", borderRadius: 14, marginVertical: 6, padding: 18, shadowColor: "#222", shadowOpacity: 0.15, shadowRadius: 7, elevation: 4 }} onPress={() => navigation.navigate("AddProduct", { userId })}>
+          <TouchableOpacity style={{ backgroundColor: "#fff", borderRadius: 14, marginVertical: 6, padding: 18, shadowColor: "#222", shadowOpacity: 0.15, shadowRadius: 7, elevation: 4 }} onPress={() => navigation.navigate("AddProduct", { userId: user?.uid })}>
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
               <View style={{ flexDirection: "row", alignItems: "center" }}>
                 <View style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: "#DBEAFE", justifyContent: "center", alignItems: "center" }}>
@@ -316,7 +310,7 @@ const WholesalerDashboard = ({ navigation }) => {
             </View>
             <TouchableOpacity style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#1e3a8a", borderRadius: 10, paddingVertical: 12, paddingHorizontal: 18, marginTop: 12 }} onPress={() => {
               setSidebarOpen(false);
-              navigation.navigate("AddProduct", { userId });
+              navigation.navigate("AddProduct", { userId: user?.uid });
             }}>
               <Plus stroke="#fff" width={18} />
               <Text style={{ color: "#fff", fontWeight: "bold", marginLeft: 10, fontSize: 15 }}>Add New Product</Text>
@@ -334,6 +328,7 @@ const WholesalerDashboard = ({ navigation }) => {
           </View>
         </View>
       </Modal>
+      </View>
     </SafeAreaView>
   );
 };

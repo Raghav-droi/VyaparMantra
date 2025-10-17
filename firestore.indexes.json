@@ -1,32 +1,21 @@
 {
   "indexes": [
     {
-      "collectionGroup": "products",
-      "queryScope": "COLLECTION",
+      "collectionGroup": "cart",
       "fields": [
-        { "fieldPath": "searchName", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        { "fieldPath": "retailerId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" },
+        { "fieldPath": "__name__", "order": "DESCENDING" }
       ]
     },
     {
-      "collectionGroup": "products",
-      "queryScope": "COLLECTION",
+      "collectionGroup": "orders",
       "fields": [
-        { "fieldPath": "category", "order": "ASCENDING" },
-        { "fieldPath": "searchName", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "wholesalerProducts",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "productId", "order": "ASCENDING" }
+        { "fieldPath": "retailerId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" },
+        { "fieldPath": "__name__", "order": "DESCENDING" }
       ]
     }
   ],
-  "fieldOverrides": [
-    { "collectionGroup": "products", "fieldPath": "createdAt", "indexes": [ { "order": "DESCENDING" } ] },
-    { "collectionGroup": "products", "fieldPath": "searchName", "indexes": [ { "order": "ASCENDING" } ] },
-    { "collectionGroup": "products", "fieldPath": "category", "indexes": [ { "order": "ASCENDING" } ] }
-  ]
+  "fieldOverrides": []
 }
