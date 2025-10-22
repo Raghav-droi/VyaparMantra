@@ -4,7 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { 
   Bell, Shield, ShoppingCart, Clock, DollarSign, Package, CheckCircle, X, ArrowRight, ChevronLeft, ChevronRight, TrendingUp, Home, Settings, CreditCard, LogOut, Plus, Menu
 } from "lucide-react-native";
-import { getAuth } from '@react-native-firebase/auth';
+import { getAuth, signOut } from '@react-native-firebase/auth';
 import { getFirestore, doc, getDoc } from '@react-native-firebase/firestore';
 import ProfessionalHeader from '../components/ui/ProfessionalHeader';
 import AnimatedCard from '../components/ui/AnimatedCard';
@@ -19,6 +19,8 @@ const WholesalerDashboard = () => {
   const [currentOrderPage, setCurrentOrderPage] = useState(1);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const user = getAuth().currentUser;
+  
+  console.log('WholesalerDashboard rendered - user:', !!user, 'loading:', loading, 'user.phoneNumber:', user?.phoneNumber, 'user.uid:', user?.uid);
 
   // Mock data for demonstration
   const mockStats = {
@@ -45,23 +47,48 @@ const WholesalerDashboard = () => {
   };
 
   useEffect(() => {
-    if (!user?.phoneNumber) return;
     const fetchProfile = async () => {
       try {
-        const userDocRef = doc(db, 'wholesaler', user.phoneNumber!.replace('+91', ''));
-        const userSnap = await getDoc(userDocRef);
-        if (userSnap.exists() && userSnap.data()?.userType === "wholesale") {
-          setTradeName(userSnap.data()?.tradeName || "--");
+        if (user?.phoneNumber) {
+          // User has phone number in auth object
+          console.log('Fetching wholesaler profile by phone:', user.phoneNumber);
+          const userDocRef = doc(db, 'wholesaler', user.phoneNumber.replace('+91', ''));
+          const userSnap = await getDoc(userDocRef);
+          console.log('Wholesaler doc exists:', userSnap.exists());
+          if (userSnap.exists() && userSnap.data()?.userType === "wholesale") {
+            setTradeName(userSnap.data()?.tradeName || "--");
+            console.log('Set trade name to:', userSnap.data()?.tradeName || "--");
+          } else {
+            setTradeName("--");
+            console.log('Wholesaler not found or wrong user type');
+          }
         } else {
-          setTradeName("--");
+          // User doesn't have phone number (custom token login), use UID
+          console.log('Fetching wholesaler profile by UID:', user?.uid);
+          const userDocRef = doc(db, 'wholesaler', user?.uid || '');
+          const userSnap = await getDoc(userDocRef);
+          console.log('Wholesaler doc exists by UID:', userSnap.exists());
+          if (userSnap.exists() && userSnap.data()?.userType === "wholesale") {
+            setTradeName(userSnap.data()?.tradeName || "--");
+            console.log('Set trade name to:', userSnap.data()?.tradeName || "--");
+          } else {
+            setTradeName("--");
+            console.log('Wholesaler not found or wrong user type by UID');
+          }
         }
       } catch (err) {
+        console.error('Error fetching wholesaler profile:', err);
         setTradeName("--");
       } finally {
         setLoading(false);
       }
     };
-    fetchProfile();
+    
+    if (user) {
+      fetchProfile();
+    } else {
+      setLoading(false);
+    }
   }, [user]);
 
   const ordersPerPage = 4;
@@ -88,8 +115,19 @@ const WholesalerDashboard = () => {
         <TouchableOpacity
           style={{ marginTop: 20, alignSelf: 'center', backgroundColor: '#FF8C00', padding: 12, borderRadius: 8 }}
           onPress={async () => {
-            await getAuth().signOut();
-            navigation.navigate('Home');
+            try {
+              const auth = getAuth();
+              if (auth.currentUser) {
+                await signOut(auth);
+                console.log('Wholesaler signed out successfully (error case)');
+              } else {
+                console.log('No user to sign out (already signed out) - error case');
+              }
+              navigation.navigate('Home');
+            } catch (error) {
+              console.error('Error signing out (error case):', error);
+              navigation.navigate('Home');
+            }
           }}
         >
           <Text style={{ color: '#fff', fontWeight: 'bold' }}>Go to Login</Text>
@@ -318,9 +356,20 @@ const WholesalerDashboard = () => {
             {/* Add more sidebar options as needed */}
             <TouchableOpacity style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 10, paddingVertical: 12, paddingHorizontal: 18, marginTop: 10 }} onPress={async () => {
               setSidebarOpen(false);
-              await getAuth().signOut();
-              // REMOVE navigation.replace('Home');
-              // No navigation needed here!
+              try {
+                const auth = getAuth();
+                if (auth.currentUser) {
+                  await signOut(auth);
+                  console.log('Wholesaler signed out successfully');
+                } else {
+                  console.log('No user to sign out (already signed out)');
+                }
+                navigation.navigate('Home');
+              } catch (error) {
+                console.error('Error signing out:', error);
+                // Still navigate to home even if signout fails
+                navigation.navigate('Home');
+              }
             }}>
               <LogOut stroke="#D14343" width={18} />
               <Text style={{ color: "#D14343", fontWeight: "bold", marginLeft: 10, fontSize: 15 }}>Sign Out</Text>

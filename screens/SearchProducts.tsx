@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, FlatList, ActivityIndicator, StyleSheet, StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import firestore from '@react-native-firebase/firestore';
+import { getFirestore, collection, query as firestoreQuery, where, getDocs, limit } from '@react-native-firebase/firestore';
 import { useNavigation } from '../App';
 
 type ProductDoc = {
@@ -32,8 +32,14 @@ const CATEGORIES = [
 
 export default function SearchProducts() {
   const navigation = useNavigation<any>();
-  const [query, setQuery] = useState('');
-  const [category, setCategory] = useState('ALL');
+  const { initialQuery = '', category: initialCategory = 'ALL' } = navigation.params || {};
+  
+  // Ensure category is always set to 'ALL' if not provided or invalid
+  const validCategory = CATEGORIES.includes(initialCategory) ? initialCategory : 'ALL';
+  const [query, setQuery] = useState(initialQuery);
+  const [category, setCategory] = useState(validCategory);
+  
+  console.log('SearchProducts rendered with params:', { initialQuery, category: initialCategory });
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<ProductDoc[]>([]);
 
@@ -42,52 +48,29 @@ export default function SearchProducts() {
   const runSearch = async () => {
     setLoading(true);
     try {
-      const db = firestore();
-      let ref = db.collection('products');
-
-      // Apply category filter first
+      const db = getFirestore();
+      
+      // Get all products first, then filter client-side to avoid index issues
+      let q = firestoreQuery(collection(db, 'products'), limit(100));
+      const snap = await getDocs(q);
+      let allProducts = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as any;
+      
+      // Apply category filter
       if (category !== 'ALL') {
-        ref = ref.where('category', '==', category) as any;
+        allProducts = allProducts.filter((product: any) => product.category === category);
       }
-
-      // Apply search filter - case insensitive partial search
+      
+      // Apply search filter
       if (normalizedQuery) {
-        ref = ref.where('searchName', '>=', normalizedQuery)
-                 .where('searchName', '<=', normalizedQuery + '\uf8ff') as any;
-      }
-
-      const snap = await ref.limit(50).get();
-      let searchResults = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as any;
-
-      // If we have a search query, also do a more flexible search
-      if (normalizedQuery && searchResults.length < 10) {
-        // Get all products in category (or all if no category)
-        let allRef = db.collection('products');
-        if (category !== 'ALL') {
-          allRef = allRef.where('category', '==', category) as any;
-        }
-        
-        const allSnap = await allRef.limit(100).get();
-        const allProducts = allSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as any;
-        
-        // Filter products that contain the search term (case insensitive)
-        const flexibleResults = allProducts.filter((product: any) => {
+        allProducts = allProducts.filter((product: any) => {
           const productName = (product.name || '').toLowerCase();
           const productSearchName = (product.searchName || '').toLowerCase();
           return productName.includes(normalizedQuery) || productSearchName.includes(normalizedQuery);
         });
-
-        // Combine and deduplicate results
-        const combinedResults = [...searchResults];
-        flexibleResults.forEach((product: any) => {
-          if (!combinedResults.find(r => r.id === product.id)) {
-            combinedResults.push(product);
-          }
-        });
-
-        searchResults = combinedResults.slice(0, 50);
       }
-
+      
+      // Limit results
+      const searchResults = allProducts.slice(0, 50);
       setResults(searchResults);
     } catch (e) {
       console.error('Search error:', e);
@@ -160,7 +143,7 @@ export default function SearchProducts() {
           renderItem={({ item }) => (
             <TouchableOpacity
               style={styles.card}
-              onPress={() => navigation.navigate('ProductDetails', { productId: item.productId, name: item.name })}
+              onPress={() => navigation.navigate('ProductWholesalers', { productId: item.id, productName: item.name })}
             >
               <Text style={styles.cardTitle}>{item.name}</Text>
               <Text style={styles.cardMeta}>{item.category} • {item.unit}</Text>

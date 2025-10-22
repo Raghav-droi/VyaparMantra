@@ -53,7 +53,7 @@ app.post('/', async (req, res) => {
 
     const token = await admin.auth().createCustomToken(phone);
     console.log(`Login successful for phone: ${phone}`);
-    res.json({ token });
+    res.json({ token, userType: 'wholesale' });
   } catch (err) {
     console.error(`Server error for phone: ${phone}`, err);
     res.status(500).send('Server error');
@@ -89,7 +89,7 @@ app.post('/retailer-login', async (req, res) => {
 
     const token = await admin.auth().createCustomToken(phone);
     console.log(`Retailer login successful for phone: ${phone}`);
-    res.json({ token });
+    res.json({ token, userType: 'retail' });
   } catch (err) {
     console.error(`Server error for retailer phone: ${phone}`, err);
     res.status(500).send('Server error');

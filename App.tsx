@@ -6,7 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import SplashScreen from './screens/SplashScreen';
 import Home_Page_Login from './Home_Page_Login';
-import { LoginPage } from './screens/Login_page';
+import LoginPage from './screens/Login_page';
 import RegistrationForm from './RegistrationForm';
 import WholesalerDashboard from './screens/WholesalerDashboard';
 import RetailerDashboard from './screens/RetailerDashboard';
@@ -14,6 +14,8 @@ import RetailerSuccessPage from './screens/Re_regs';
 import SearchProducts from './screens/SearchProducts';
 import ProductDetails from './screens/ProductDetails';
 import OrderTracking from './screens/OrderTracking';
+import RetailerProfile from './screens/RetailerProfile';
+import ProductWholesalers from './screens/ProductWholesalers';
 
 // Navigation Context
 type NavigationContextType = {
@@ -30,7 +32,11 @@ const NavigationContext = createContext<NavigationContextType>({
   params: {},
 });
 
-export const useNavigation = () => useContext(NavigationContext);
+export const useNavigation = () => {
+  const context = useContext(NavigationContext);
+  console.log('useNavigation called, context:', context);
+  return context;
+};
 
 const App = () => {
   const [loading, setLoading] = useState(true);
@@ -46,6 +52,7 @@ const App = () => {
   useEffect(() => {
     // Show splash for 3 seconds
     const splashTimeout = setTimeout(() => {
+      console.log('Splash timeout reached, hiding splash');
       setShowSplash(false);
     }, 3000);
 
@@ -55,10 +62,25 @@ const App = () => {
   useEffect(() => {
     console.log('App loaded, checking user...');
     const auth = getAuth();
+    
+    // Set a timeout to ensure loading is set to false even if auth fails
+    const loadingTimeout = setTimeout(() => {
+      console.log('Loading timeout reached, setting loading to false');
+      setLoading(false);
+    }, 5000); // 5 second timeout
+    
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       console.log('Auth state changed:', currentUser);
       console.log('Current user phone:', currentUser?.phoneNumber);
+      console.log('Current loading state:', loading);
+      
       setUser(currentUser);
+      
+      // Skip processing if user is null and we're already on home screen
+      if (!currentUser && currentScreen === 'Home') {
+        console.log('No user and already on home, skipping...');
+        return;
+      }
 
       if (currentUser) {
         try {
@@ -79,11 +101,39 @@ const App = () => {
             const userTypeKeys = keys.filter(key => key.startsWith('userType_'));
             
             if (userTypeKeys.length > 0) {
-              // Get the most recent user type
-              const latestKey = userTypeKeys[userTypeKeys.length - 1];
-              storedUserType = await AsyncStorage.getItem(latestKey);
-              foundPhoneNumber = latestKey.replace('userType_', '');
-              console.log('Found stored user type:', storedUserType, 'for phone:', foundPhoneNumber);
+              // Find the most recent user type by checking timestamps
+              let mostRecentTimestamp = 0;
+              let mostRecentKey = '';
+              
+              for (const key of userTypeKeys) {
+                const phone = key.replace('userType_', '');
+                const timestampKey = `userType_${phone}_timestamp`;
+                const timestamp = await AsyncStorage.getItem(timestampKey);
+                
+                if (timestamp && parseInt(timestamp) > mostRecentTimestamp) {
+                  mostRecentTimestamp = parseInt(timestamp);
+                  mostRecentKey = key;
+                }
+              }
+              
+              if (mostRecentKey) {
+                storedUserType = await AsyncStorage.getItem(mostRecentKey);
+                foundPhoneNumber = mostRecentKey.replace('userType_', '');
+                console.log('Found most recent user type:', storedUserType, 'for phone:', foundPhoneNumber, 'timestamp:', mostRecentTimestamp);
+              } else {
+                // Fallback to the last key if no timestamps found
+                const latestKey = userTypeKeys[userTypeKeys.length - 1];
+                storedUserType = await AsyncStorage.getItem(latestKey);
+                foundPhoneNumber = latestKey.replace('userType_', '');
+                console.log('Fallback - found user type:', storedUserType, 'for phone:', foundPhoneNumber);
+              }
+              
+              console.log('All available user types:', userTypeKeys);
+            } else {
+              // No stored user type found, set loading to false and go to home
+              console.log('No stored user type found, redirecting to home');
+              setLoading(false);
+              return;
             }
           }
 
@@ -92,52 +142,66 @@ const App = () => {
             if (storedUserType === 'wholesale') {
               console.log('Setting route to WholesalerDashboard');
               setInitialRoute('WholesalerDashboard');
-              setCurrentScreen('WholesalerDashboard');
+              if (currentScreen !== 'WholesalerDashboard') {
+                setCurrentScreen('WholesalerDashboard');
+              }
             } else {
               console.log('Setting route to RetailerDashboard');
               setInitialRoute('RetailerDashboard');
-              setCurrentScreen('RetailerDashboard');
+              if (currentScreen !== 'RetailerDashboard') {
+                setCurrentScreen('RetailerDashboard');
+              }
             }
           } else {
             const db = getFirestore();
             // Try to find user by phone number first
-            const userDoc = await getDoc(doc(db, 'users', foundPhoneNumber));
+            if (foundPhoneNumber) {
+              const userDoc = await getDoc(doc(db, 'users', foundPhoneNumber));
 
-            if (userDoc.exists()) {
-              const userData = userDoc.data();
-              const fetchedUserType = userData?.userType;
-              console.log('Fetched user type from Firestore:', fetchedUserType);
-
-              if (fetchedUserType) {
-                setUserType(fetchedUserType);
-                await AsyncStorage.setItem(`userType_${foundPhoneNumber}`, fetchedUserType);
-
-                if (fetchedUserType === 'wholesale') {
-                  setInitialRoute('WholesalerDashboard');
-                  setCurrentScreen('WholesalerDashboard');
-                } else {
-                  setInitialRoute('RetailerDashboard');
-                  setCurrentScreen('RetailerDashboard');
-                }
-              }
-            } else {
-              // Fallback: try to find by UID
-              const userDocByUid = await getDoc(doc(db, 'users', currentUser.uid));
-              if (userDocByUid.exists()) {
-                const userData = userDocByUid.data();
+              if (userDoc.exists()) {
+                const userData = userDoc.data();
                 const fetchedUserType = userData?.userType;
-                console.log('Fetched user type from Firestore by UID:', fetchedUserType);
+                console.log('Fetched user type from Firestore:', fetchedUserType);
 
                 if (fetchedUserType) {
                   setUserType(fetchedUserType);
                   await AsyncStorage.setItem(`userType_${foundPhoneNumber}`, fetchedUserType);
 
                   if (fetchedUserType === 'wholesale') {
-                    setInitialRoute('WholesalerDashboard');
-                    setCurrentScreen('WholesalerDashboard');
+            setInitialRoute('WholesalerDashboard');
+                    if (currentScreen !== 'WholesalerDashboard') {
+                      setCurrentScreen('WholesalerDashboard');
+                    }
                   } else {
                     setInitialRoute('RetailerDashboard');
-                    setCurrentScreen('RetailerDashboard');
+                    if (currentScreen !== 'RetailerDashboard') {
+                      setCurrentScreen('RetailerDashboard');
+                    }
+                  }
+                }
+              } else {
+                // Fallback: try to find by UID
+                const userDocByUid = await getDoc(doc(db, 'users', currentUser.uid));
+                if (userDocByUid.exists()) {
+                  const userData = userDocByUid.data();
+                  const fetchedUserType = userData?.userType;
+                  console.log('Fetched user type from Firestore by UID:', fetchedUserType);
+
+                  if (fetchedUserType) {
+                    setUserType(fetchedUserType);
+                    await AsyncStorage.setItem(`userType_${foundPhoneNumber}`, fetchedUserType);
+
+                    if (fetchedUserType === 'wholesale') {
+          setInitialRoute('WholesalerDashboard');
+                      if (currentScreen !== 'WholesalerDashboard') {
+                        setCurrentScreen('WholesalerDashboard');
+                      }
+                    } else {
+          setInitialRoute('RetailerDashboard');
+                      if (currentScreen !== 'RetailerDashboard') {
+                        setCurrentScreen('RetailerDashboard');
+                      }
+                    }
                   }
                 }
               }
@@ -152,18 +216,28 @@ const App = () => {
         setCurrentScreen('Home');
       }
 
+      console.log('Setting loading to false');
       setLoading(false);
+      clearTimeout(loadingTimeout);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      clearTimeout(loadingTimeout);
+    };
   }, []);
 
   useEffect(() => {
-    if (user && initialRoute) {
+    console.log('Navigation effect triggered - user:', !!user, 'initialRoute:', initialRoute, 'currentScreen:', currentScreen);
+    // Only redirect to dashboard if user is logged in and we're on a non-dashboard screen
+    // but not if we're on a sub-screen of the dashboard (like SearchProducts, ProductWholesalers, etc.)
+    if (user && initialRoute && 
+        (currentScreen === 'Home' || currentScreen === 'Login' || currentScreen === 'RegistrationForm' || currentScreen === 'Re_regs') &&
+        currentScreen !== initialRoute) {
       console.log('Navigating to:', initialRoute);
       setCurrentScreen(initialRoute);
     }
-  }, [user, initialRoute]);
+  }, [user, initialRoute, currentScreen]);
 
   // Back button handler
   useEffect(() => {
@@ -212,12 +286,23 @@ const App = () => {
     return () => subscription.remove();
   }, [user, backPressedOnce, navigationHistory, currentScreen]);
 
+  console.log('Render check - showSplash:', showSplash, 'loading:', loading, 'currentScreen:', currentScreen);
+
   if (showSplash || loading) {
+    console.log('Showing splash screen');
     return <SplashScreen />;
+  }
+
+  // Safety check - if we're not showing splash and not loading, ensure we have a valid screen
+  if (!currentScreen || currentScreen === '') {
+    console.log('No current screen set, defaulting to Home');
+    setCurrentScreen('Home');
   }
 
   // Navigation functions
   const navigate = (screen: string, params: any = {}) => {
+    console.log('Navigate called - from:', currentScreen, 'to:', screen, 'params:', params);
+    
     // Clear navigation history when navigating to dashboards (after login)
     if (screen === 'RetailerDashboard' || screen === 'WholesalerDashboard') {
       setNavigationHistory([]);
@@ -226,6 +311,7 @@ const App = () => {
     }
     setCurrentScreen(screen);
     setScreenParams(params);
+    console.log('Navigation state updated - currentScreen:', screen, 'params:', params);
   };
 
   const goBack = () => {
@@ -246,11 +332,12 @@ const App = () => {
 
   // Render current screen
   const renderScreen = () => {
-    console.log('Rendering screen:', currentScreen);
+    console.log('Rendering screen:', currentScreen, 'with params:', screenParams);
     switch (currentScreen) {
       case 'Home':
         return <Home_Page_Login />;
       case 'Login':
+        console.log('Rendering LoginPage with userType:', screenParams.userType || 'retail');
         return <LoginPage userType={screenParams.userType || 'retail'} />;
       case 'RegistrationForm':
         return <RegistrationForm />;
@@ -266,6 +353,10 @@ const App = () => {
         return <ProductDetails />;
       case 'OrderTracking':
         return <OrderTracking />;
+      case 'RetailerProfile':
+        return <RetailerProfile />;
+      case 'ProductWholesalers':
+        return <ProductWholesalers />;
       default:
         return <Home_Page_Login />;
     }

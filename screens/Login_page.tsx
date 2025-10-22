@@ -1,858 +1,703 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
+  StyleSheet,
+  Alert,
   ActivityIndicator,
-  SafeAreaView,
+  Animated,
   KeyboardAvoidingView,
   Platform,
-  Animated,
-  Alert,
-  StyleSheet,
 } from 'react-native';
-import auth, { getAuth } from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
+import { getAuth, signInWithPhoneNumber, PhoneAuthProvider, signInWithCredential, signInWithCustomToken } from '@react-native-firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {
-  Phone,
-  ArrowRight,
-  ArrowLeft,
-  Shield,
-  CheckCircle,
-  Clock,
-  RefreshCw,
-  Lock,
-  MessageSquare,
-  Eye,
-  EyeOff,
-} from 'lucide-react-native';
+// import { Eye, EyeOff, CheckCircle, RefreshCw } from 'lucide-react-native';
 import { useNavigation } from '../App';
 
-type LoginStep = 'method' | 'password' | 'phone' | 'otp' | 'success';
-type LoginMethod = 'password' | 'otp';
+type LoginStep = 'phone' | 'otp' | 'password' | 'success';
 
-export function LoginPage({ userType: propUserType }: { userType?: string }) {
+interface LoginPageProps {
+  userType: 'retail' | 'wholesale';
+}
+
+export default function LoginPage({ userType }: LoginPageProps) {
   const navigation = useNavigation();
-  const userType = propUserType || navigation.params?.userType || 'wholesale'; // default to wholesaler
-
-  const [currentStep, setCurrentStep] = useState<LoginStep>('method');
-  const [loginMethod, setLoginMethod] = useState<LoginMethod>('password');
-  const [passwordPhone, setPasswordPhone] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [otpPhone, setOtpPhone] = useState('');
-  const [otpCode, setOtpCode] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [otpTimer, setOtpTimer] = useState(30);
-  const [canResendOtp, setCanResendOtp] = useState(false);
-  const [confirmation, setConfirmation] = useState<any>(null);
-  const [userTypeState, setUserTypeState] = useState<string | null>(null);
-  const [phone, setPhone] = useState('');
-  const [showOtp, setShowOtp] = useState(false);
-  const [hasNavigated, setHasNavigated] = useState(false);
-  const successPulse = useRef(new Animated.Value(1)).current;
+  const auth = getAuth();
   
-  // Stable TextInput components to prevent re-renders
-  const PasswordPhoneInput = React.memo(() => (
-    <TextInput
-      value={passwordPhone}
-      onChangeText={(text) => setPasswordPhone(text.replace(/\D/g, '').slice(0, 10))}
-      keyboardType="number-pad"
-      placeholder="Enter 10-digit mobile number"
-      style={styles.phoneInput}
-      maxLength={10}
-      autoFocus={true}
-      returnKeyType="next"
-      blurOnSubmit={false}
-      autoCorrect={false}
-      autoCapitalize="none"
-    />
-  ));
+  console.log('LoginPage rendered with userType:', userType);
+  
+  // State management
+  const [currentStep, setCurrentStep] = useState<LoginStep>('phone');
+  const [phone, setPhone] = useState('');
+  const [otp, setOtp] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showOtp, setShowOtp] = useState(false);
+  const [otpTimer, setOtpTimer] = useState(0);
+  const [canResendOtp, setCanResendOtp] = useState(false);
+  const [hasNavigated, setHasNavigated] = useState(false);
+  
+  // Refs for focus management
+  const phoneRef = useRef<TextInput>(null);
+  const otpRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
+  
+  // Animation
+  const successPulse = useRef(new Animated.Value(1)).current;
 
-  const PasswordInput = React.memo(() => (
-    <TextInput
-      value={password}
-      onChangeText={setPassword}
-      placeholder="Enter your password"
-      style={styles.passwordInput}
-      secureTextEntry={!showPassword}
-      maxLength={32}
-      returnKeyType="done"
-      blurOnSubmit={true}
-      autoCorrect={false}
-      autoCapitalize="none"
-    />
-  ));
-
-  const OtpPhoneInput = React.memo(() => (
-    <TextInput
-      value={otpPhone}
-      onChangeText={(text) => setOtpPhone(text.replace(/\D/g, '').slice(0, 10))}
-      keyboardType="number-pad"
-      placeholder="Enter 10-digit mobile number"
-      style={styles.phoneInput}
-      maxLength={10}
-      autoFocus={true}
-      returnKeyType="next"
-      blurOnSubmit={false}
-      autoCorrect={false}
-      autoCapitalize="none"
-    />
-  ));
-
-  const OtpCodeInput = React.memo(() => (
-    <TextInput
-      value={otpCode}
-      onChangeText={(text) => setOtpCode(text.replace(/\D/g, '').slice(0, 6))}
-      keyboardType="number-pad"
-      placeholder="Enter 6-digit OTP"
-      style={styles.otpInputField}
-      maxLength={6}
-      autoFocus={true}
-      secureTextEntry={!showOtp}
-      placeholderTextColor="#9ca3af"
-      returnKeyType="done"
-      blurOnSubmit={true}
-      autoCorrect={false}
-      autoCapitalize="none"
-    />
-  ));
-
-  // OTP Timer countdown
+  // OTP Timer
   useEffect(() => {
     if (currentStep === 'otp' && otpTimer > 0) {
-      const timer = setTimeout(() => setOtpTimer((prev) => prev - 1), 1000);
+      const timer = setTimeout(() => setOtpTimer(prev => prev - 1), 1000);
       return () => clearTimeout(timer);
     } else if (otpTimer === 0) {
       setCanResendOtp(true);
     }
   }, [currentStep, otpTimer]);
 
-  // Success pulse animation
+  // Success animation
   useEffect(() => {
     if (currentStep === 'success') {
-      Animated.loop(
+      const animation = Animated.loop(
         Animated.sequence([
-          Animated.timing(successPulse, { toValue: 1.08, duration: 700, useNativeDriver: true }),
-          Animated.timing(successPulse, { toValue: 1, duration: 700, useNativeDriver: true }),
-        ]),
-      ).start();
+          Animated.timing(successPulse, {
+            toValue: 1.1,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(successPulse, {
+            toValue: 1,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      animation.start();
+      return () => animation.stop();
     }
   }, [currentStep, successPulse]);
 
-  // Password Login Handler
-  const handlePasswordLogin = async () => {
-    if (passwordPhone.length !== 10 || password.length < 6) {
-      Alert.alert('Error', 'Enter valid phone and password');
-      return;
+  // Auto-navigation after success
+  useEffect(() => {
+    if (currentStep === 'success' && !hasNavigated) {
+      console.log('Success step reached, userType:', userType, 'hasNavigated:', hasNavigated);
+      const timer = setTimeout(() => {
+        console.log('Navigating to dashboard for userType:', userType);
+        setHasNavigated(true);
+        if (userType === 'wholesale') {
+          console.log('Navigating to WholesalerDashboard');
+          navigation.navigate('WholesalerDashboard');
+        } else {
+          console.log('Navigating to RetailerDashboard');
+          navigation.navigate('RetailerDashboard');
+        }
+      }, 2000);
+      return () => clearTimeout(timer);
     }
-    setIsLoading(true);
-    try {
-      // Use the correct endpoint based on userType
-      const endpoint = userType === 'retail' 
-        ? 'https://asia-south1-vm-authentication-4d4ea.cloudfunctions.net/loginWithPassword/retailer-login'
-        : 'https://asia-south1-vm-authentication-4d4ea.cloudfunctions.net/loginWithPassword';
-      
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: passwordPhone, password }),
-      });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        Alert.alert('Error', errorText || 'Login failed');
-        setIsLoading(false);
-        return;
-      }
-      const { token } = await response.json();
-      await auth().signInWithCustomToken(token);
+  }, [currentStep, hasNavigated, userType, navigation]);
 
-      // Store the user type for future reference
-      setUserTypeState(userType);
-      
-      try {
-        await AsyncStorage.setItem(`userType_${passwordPhone}`, userType);
-        console.log(`Stored user type: ${userType} for phone: ${passwordPhone}`);
-      } catch (error) {
-        console.log('Error storing user type:', error);
-      }
-      
-      // Set success step to show success message and auto-navigate
-      setCurrentStep('success');
-      console.log('Login successful, showing success step');
-    } catch (err) {
-      Alert.alert('Error', 'Login failed');
-    }
-    setIsLoading(false);
+  // Phone number validation
+  const isValidPhone = (phoneNumber: string) => {
+    return /^[6-9]\d{9}$/.test(phoneNumber);
   };
 
-  // OTP Login Handlers
+  // Handle phone number input
+  const handlePhoneChange = (text: string) => {
+    const cleaned = text.replace(/\D/g, '');
+    if (cleaned.length <= 10) {
+      setPhone(cleaned);
+    }
+  };
+
+  // Handle OTP input
+  const handleOtpChange = (text: string) => {
+    const cleaned = text.replace(/\D/g, '');
+    if (cleaned.length <= 6) {
+      setOtp(cleaned);
+    }
+  };
+
+  // Send OTP
   const handleSendOtp = async () => {
-    if (otpPhone.length !== 10) {
-      Alert.alert('Error', 'Enter valid phone number');
+    if (!isValidPhone(phone)) {
+      Alert.alert('Invalid Phone', 'Please enter a valid 10-digit mobile number');
       return;
     }
+
     setIsLoading(true);
     try {
-      const collectionName = userType === 'retail' ? 'retailer' : 'wholesaler';
-      const userDoc = await firestore().collection(collectionName).doc(otpPhone).get();
-      if (!userDoc.exists) {
-        Alert.alert('Error', 'Phone number not registered');
-        setIsLoading(false);
-        return;
-      }
-      const confirmationResult = await getAuth().signInWithPhoneNumber('+91' + otpPhone);
+      const phoneNumber = `+91${phone}`;
+      const confirmationResult = await signInWithPhoneNumber(auth, phoneNumber);
       setConfirmation(confirmationResult);
       setCurrentStep('otp');
-      setOtpTimer(30);
+      setOtpTimer(60);
       setCanResendOtp(false);
-      setOtpCode('');
-      setShowOtp(false);
-      Alert.alert('OTP Sent', 'Check your SMS for the OTP');
-    } catch (err) {
-      Alert.alert('Error', 'Failed to send OTP');
+    } catch (error: any) {
+      console.error('OTP send error:', error);
+      Alert.alert('Error', 'Failed to send OTP. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
+  // Verify OTP
   const handleVerifyOtp = async () => {
-    if (otpCode.length !== 6) {
-      Alert.alert('Error', 'Enter the complete 6-digit OTP');
+    if (otp.length !== 6) {
+      Alert.alert('Invalid OTP', 'Please enter the 6-digit OTP');
       return;
     }
-    if (!confirmation) {
-      Alert.alert('Error', 'No OTP confirmation found');
-      return;
-    }
+
     setIsLoading(true);
     try {
-      await confirmation.confirm(otpCode);
+      const credential = PhoneAuthProvider.credential(confirmation.verificationId, otp);
+      await signInWithCredential(auth, credential);
       setCurrentStep('success');
-      
-      // Store the user type for future reference
-      try {
-        await AsyncStorage.setItem(`userType_${otpPhone}`, userType);
-        console.log(`Stored user type: ${userType} for phone: ${otpPhone}`);
-      } catch (error) {
-        console.log('Error storing user type:', error);
-      }
-      
-      // Let App.tsx handle the navigation based on user type
-      console.log('OTP verification successful, App.tsx will handle navigation');
-    } catch (err) {
-      Alert.alert('Error', 'Invalid OTP');
+    } catch (error: any) {
+      console.error('OTP verification error:', error);
+      Alert.alert('Error', 'Invalid OTP. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
-  const handleResendOtp = async () => {
+  // Password login
+  const handlePasswordLogin = async () => {
+    if (!isValidPhone(phone)) {
+      Alert.alert('Invalid Phone', 'Please enter a valid 10-digit mobile number');
+      return;
+    }
+
+    if (!password.trim()) {
+      Alert.alert('Invalid Password', 'Please enter your password');
+      return;
+    }
+
     setIsLoading(true);
     try {
-      const confirmationResult = await getAuth().signInWithPhoneNumber('+91' + otpPhone);
-      setConfirmation(confirmationResult);
-      setOtpTimer(30);
-      setCanResendOtp(false);
-      setOtpCode('');
-      setShowOtp(false);
-      Alert.alert('OTP Sent', 'Check your SMS for the OTP');
-    } catch (err) {
-      Alert.alert('Error', 'Failed to resend OTP');
+      console.log('Attempting password login for phone:', phone, 'userType:', userType);
+      const endpoint = userType === 'wholesale' ? 'loginWithPassword' : 'loginWithPassword/retailer-login';
+      const response = await fetch(`https://asia-south1-vm-authentication-4d4ea.cloudfunctions.net/${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          phone: phone,
+          password: password,
+        }),
+      });
+
+      console.log('Response status:', response.status);
+      console.log('Response headers:', response.headers);
+      
+      // Check if response is ok
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('HTTP error response:', errorText);
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      // Check if response is JSON
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        console.error('Non-JSON response:', text);
+        throw new Error('Server returned non-JSON response');
+      }
+
+      const data = await response.json();
+      console.log('Response data:', data);
+      
+      if (data.token) {
+        // Login successful - authenticate with Firebase using the custom token
+        try {
+          const auth = getAuth();
+          console.log('Signing in with custom token...');
+          
+          // Sign in with the custom token
+          await signInWithCustomToken(auth, data.token);
+          console.log('Successfully signed in with custom token');
+          
+          const actualUserType = data.userType || userType; // Use server response or fallback to prop
+          
+          // Validate that the user type matches what we're trying to log in as
+          if (data.userType && data.userType !== userType) {
+            Alert.alert('Login Failed', `This phone number is registered as a ${data.userType === 'wholesale' ? 'Wholesaler' : 'Retailer'}. Please use the correct login option.`);
+            return;
+          }
+          
+          try {
+            const timestamp = Date.now();
+            await AsyncStorage.setItem(`userType_${phone}`, actualUserType);
+            await AsyncStorage.setItem(`userType_${phone}_timestamp`, timestamp.toString());
+            console.log('Stored user type:', actualUserType, 'for phone:', phone, 'at timestamp:', timestamp);
+          } catch (storageError) {
+            console.error('Error storing user type:', storageError);
+          }
+        } catch (authError) {
+          console.error('Error signing in with custom token:', authError);
+          Alert.alert('Authentication Error', 'Failed to authenticate with Firebase. Please try again.');
+          return;
+        }
+        setCurrentStep('success');
+      } else {
+        Alert.alert('Login Failed', data.message || 'Invalid credentials');
+      }
+    } catch (error) {
+      console.error('Password login error:', error);
+      Alert.alert('Error', 'Login failed. Please try again or use OTP login.');
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
-  // UI Components
-  const MethodStep = () => (
-    <View style={styles.card}>
-      <View style={styles.cardBody}>
-        <View style={styles.headerCenter}>
-          <View style={styles.iconCircleBlue}>
-            <Shield color="#2563eb" size={32} />
-          </View>
-          <Text style={styles.title}>
-            {userType === 'retail' ? 'Retailer Login' : 'Wholesaler Login'}
-          </Text>
-          <Text style={styles.muted}>Choose your preferred login method</Text>
-        </View>
-        <View>
-          <TouchableOpacity
-            style={[styles.methodBtn, { marginBottom: 12 }]}
-            onPress={() => {
-              setLoginMethod('password');
+  // Resend OTP
+  const handleResendOtp = async () => {
+    setOtp('');
+    await handleSendOtp();
+  };
+
+  // Switch to password login
+  const switchToPassword = () => {
               setCurrentStep('password');
-            }}
-          >
-            <View style={styles.methodIconCircle}>
-              <Lock color="#2563eb" size={22} />
-            </View>
-            <View>
-              <Text style={styles.methodTitle}>Login with Password</Text>
-              <Text style={styles.methodDesc}>Use your phone number and password</Text>
-            </View>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.methodBtn}
-            onPress={() => {
-              setLoginMethod('otp');
+    setPassword('');
+    setTimeout(() => passwordRef.current?.focus(), 100);
+  };
+
+  // Switch to OTP login
+  const switchToOtp = () => {
               setCurrentStep('phone');
-            }}
+    setPhone('');
+    setTimeout(() => phoneRef.current?.focus(), 100);
+  };
+
+  // Render phone input step
+  const renderPhoneStep = () => (
+    <View style={styles.stepContainer}>
+      <Text style={styles.stepTitle}>Enter Mobile Number</Text>
+      <Text style={styles.stepSubtitle}>
+        We'll send you a verification code
+      </Text>
+      
+      <View style={styles.inputContainer}>
+              <View style={styles.phoneRow}>
+                <Text style={styles.prefix}>+91</Text>
+                <TextInput
+            ref={phoneRef}
+            style={styles.phoneInput}
+            value={phone}
+                  onChangeText={handlePhoneChange}
+            placeholder="Enter 10-digit mobile number"
+                  keyboardType="number-pad"
+                  maxLength={10}
+                  autoFocus={true}
+            returnKeyType="done"
+            blurOnSubmit={false}
+            onSubmitEditing={handleSendOtp}
+            autoCorrect={false}
+            autoCapitalize="none"
+                />
+              </View>
+            </View>
+
+                <TouchableOpacity
+        style={[styles.primaryBtn, (!isValidPhone(phone) || isLoading) && styles.disabledBtn]}
+        onPress={handleSendOtp}
+        disabled={!isValidPhone(phone) || isLoading}
+            >
+              {isLoading ? (
+                  <ActivityIndicator color="#fff" />
+              ) : (
+          <Text style={styles.primaryBtnText}>Send OTP</Text>
+              )}
+            </TouchableOpacity>
+
+      <TouchableOpacity style={styles.secondaryBtn} onPress={switchToPassword}>
+        <Text style={styles.secondaryBtnText}>Login with Password</Text>
+          </TouchableOpacity>
+      </View>
+    );
+
+  // Render OTP input step
+  const renderOtpStep = () => (
+    <View style={styles.stepContainer}>
+      <Text style={styles.stepTitle}>Enter OTP</Text>
+      <Text style={styles.stepSubtitle}>
+        We've sent a 6-digit code to +91{phone}
+      </Text>
+      
+      <View style={styles.inputContainer}>
+        <View style={styles.otpContainer}>
+              <TextInput
+            ref={otpRef}
+            style={styles.otpInput}
+            value={otp}
+            onChangeText={handleOtpChange}
+            placeholder="Enter 6-digit OTP"
+                keyboardType="number-pad"
+            maxLength={6}
+                autoFocus={true}
+            secureTextEntry={!showOtp}
+            returnKeyType="done"
+            blurOnSubmit={true}
+            onSubmitEditing={handleVerifyOtp}
+            autoCorrect={false}
+            autoCapitalize="none"
+          />
+          <TouchableOpacity
+            style={styles.eyeBtn}
+            onPress={() => setShowOtp(!showOtp)}
           >
-            <View style={[styles.methodIconCircle, { backgroundColor: "#bbf7d0" }]}>
-              <MessageSquare color="#16a34a" size={22} />
-            </View>
-            <View>
-              <Text style={styles.methodTitle}>Login with OTP</Text>
-              <Text style={styles.methodDesc}>Get a verification code via SMS</Text>
-            </View>
+            <Text style={styles.eyeText}>{showOtp ? '🙈' : '👁️'}</Text>
           </TouchableOpacity>
         </View>
-        <View style={styles.infoBoxOrange}>
-          <View style={styles.rowCenter}>
-            <Shield size={16} color="#c2410c" />
-            <Text style={styles.infoTitle}>  Secure & Verified</Text>
+      </View>
+
+              <TouchableOpacity
+        style={[styles.primaryBtn, (otp.length !== 6 || isLoading) && styles.disabledBtn]}
+                onPress={handleVerifyOtp}
+        disabled={otp.length !== 6 || isLoading}
+              >
+                {isLoading ? (
+                    <ActivityIndicator color="#fff" />
+                ) : (
+          <Text style={styles.primaryBtnText}>Verify OTP</Text>
+                )}
+              </TouchableOpacity>
+
+      <View style={styles.resendContainer}>
+        {otpTimer > 0 ? (
+          <Text style={styles.timerText}>Resend OTP in {otpTimer}s</Text>
+        ) : (
+          <TouchableOpacity onPress={handleResendOtp} disabled={isLoading}>
+            <Text style={styles.resendText}>Resend OTP</Text>
+              </TouchableOpacity>
+            )}
           </View>
-          <Text style={styles.infoText}>
-            {userType === 'retail'
-              ? 'Join thousands of verified retailers. Quick setup, instant access to wholesalers.'
-              : 'Join thousands of verified wholesalers. Quick setup, instant access to retailers.'}
-          </Text>
+
+      <TouchableOpacity style={styles.secondaryBtn} onPress={switchToOtp}>
+        <Text style={styles.secondaryBtnText}>Change Number</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  // Render password input step
+  const renderPasswordStep = () => (
+    <View style={styles.stepContainer}>
+      <Text style={styles.stepTitle}>Enter Password</Text>
+      <Text style={styles.stepSubtitle}>
+        Login with your password for +91{phone}
+      </Text>
+      
+      <View style={styles.inputContainer}>
+        <View style={styles.passwordRow}>
+          <TextInput
+            ref={passwordRef}
+            style={styles.passwordInput}
+            value={password}
+            onChangeText={setPassword}
+            placeholder="Enter your password"
+            secureTextEntry={!showPassword}
+            maxLength={32}
+            autoFocus={true}
+            returnKeyType="done"
+            blurOnSubmit={true}
+            onSubmitEditing={handlePasswordLogin}
+            autoCorrect={false}
+            autoCapitalize="none"
+          />
+          <TouchableOpacity
+            style={styles.eyeBtn}
+            onPress={() => setShowPassword(!showPassword)}
+          >
+            <Text style={styles.eyeText}>{showPassword ? '🙈' : '👁️'}</Text>
+          </TouchableOpacity>
         </View>
-        <Text style={styles.footerNote}>
-          By continuing, you agree to our Terms of Service and Privacy Policy
-        </Text>
+      </View>
+
+      <TouchableOpacity
+        style={[styles.primaryBtn, (!password.trim() || isLoading) && styles.disabledBtn]}
+        onPress={handlePasswordLogin}
+        disabled={!password.trim() || isLoading}
+      >
+        {isLoading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.primaryBtnText}>Login</Text>
+        )}
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.secondaryBtn} onPress={switchToOtp}>
+        <Text style={styles.secondaryBtnText}>Login with OTP</Text>
+      </TouchableOpacity>
+      </View>
+    );
+
+  // Render success step
+  const renderSuccessStep = () => (
+    <View style={styles.stepContainer}>
+      <Animated.View style={[styles.successIcon, { transform: [{ scale: successPulse }] }]}>
+        <Text style={styles.successIconText}>✅</Text>
+          </Animated.View>
+      
+          <Text style={styles.successTitle}>Login Successful!</Text>
+      <Text style={styles.successSubtitle}>
+        Welcome back to your {userType === 'wholesale' ? 'wholesaler' : 'retailer'} dashboard
+          </Text>
+      
+      <View style={styles.successInfo}>
+        <View style={styles.infoRow}>
+          <Text style={styles.infoLabel}>Phone Number</Text>
+          <Text style={styles.infoValue}>+91 {phone}</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.infoLabel}>Status</Text>
+          <Text style={styles.statusBadge}>Verified</Text>
+        </View>
+      </View>
+      
+      <View style={styles.loadingContainer}>
+        <Text style={styles.loadingIcon}>🔄</Text>
+        <Text style={styles.loadingText}>Redirecting to dashboard...</Text>
       </View>
     </View>
   );
 
-  const PasswordStep = () => {
-    return (
-      <View style={styles.card}>
-        <View style={styles.cardBody}>
-          <View style={styles.headerCenter}>
-            <View style={styles.iconCircleBlue}>
-              <Lock color="#2563eb" size={32} />
-            </View>
-            <Text style={styles.title}>Login with Password</Text>
-            <Text style={styles.muted}>Enter your credentials to continue</Text>
-          </View>
-          <View>
-            <View style={{ marginBottom: 12 }}>
-              <Text style={styles.label}>Phone Number</Text>
-              <View style={styles.phoneRow}>
-                <Text style={styles.prefix}>+91</Text>
-                <PasswordPhoneInput />
-              </View>
-            </View>
-            <View style={{ marginBottom: 12 }}>
-              <Text style={styles.label}>Password</Text>
-              <View style={styles.passwordRow}>
-                <PasswordInput />
-                <TouchableOpacity
-                  onPress={() => setShowPassword(!showPassword)}
-                  style={styles.eyeBtn}
-                >
-                  {showPassword ? (
-                    <EyeOff color="#888" size={20} />
-                  ) : (
-                    <Eye color="#888" size={20} />
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
-            <TouchableOpacity
-              onPress={handlePasswordLogin}
-              disabled={passwordPhone.length !== 10 || password.length < 6 || isLoading}
-              style={[
-                styles.primaryBtn,
-                (passwordPhone.length !== 10 || password.length < 6 || isLoading) && styles.btnDisabled,
-              ]}
-              activeOpacity={0.8}
-            >
-              {isLoading ? (
-                <View style={styles.btnContent}>
-                  <RefreshCw size={18} color="#fff" style={{ marginRight: 8 }} />
-                  <ActivityIndicator color="#fff" />
-                  <Text style={styles.btnText}>  Signing In...</Text>
-                </View>
-              ) : (
-                <View style={styles.btnContent}>
-                  <Text style={styles.btnText}>Sign In</Text>
-                  <ArrowRight size={18} color="#fff" style={{ marginLeft: 8 }} />
-                </View>
-              )}
-            </TouchableOpacity>
-          </View>
-          <TouchableOpacity style={styles.ghostBtn}>
-            <Text style={styles.ghostText}>Forgot Password?</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.outlineBtn}
-            onPress={() => setCurrentStep('method')}
-          >
-            <View style={styles.rowCenter}>
-              <ArrowLeft size={16} color="#111827" style={{ marginRight: 8 }} />
-              <Text style={styles.outlineText}>Back to Login Options</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  };
-
-  const PhoneStep = () => {
-    return (
-      <View style={styles.card}>
-        <View style={styles.cardBody}>
-          <View style={styles.headerCenter}>
-            <View style={styles.iconCircleGreen}>
-              <MessageSquare color="#16a34a" size={32} />
-            </View>
-            <Text style={styles.title}>Login with OTP</Text>
-            <Text style={styles.muted}>Enter your phone number to receive an OTP</Text>
-          </View>
-          <View>
-            <Text style={styles.label}>Phone Number</Text>
-            <View style={styles.phoneRow}>
-              <Text style={styles.prefix}>+91</Text>
-              <OtpPhoneInput />
-            </View>
-            <TouchableOpacity
-              onPress={handleSendOtp}
-              disabled={otpPhone.length !== 10 || isLoading}
-              style={[
-                styles.primaryBtn,
-                (otpPhone.length !== 10 || isLoading) && styles.btnDisabled,
-              ]}
-              activeOpacity={0.8}
-            >
-              {isLoading ? (
-                <View style={styles.btnContent}>
-                  <RefreshCw size={18} color="#fff" style={{ marginRight: 8 }} />
-                  <ActivityIndicator color="#fff" />
-                  <Text style={styles.btnText}>  Sending OTP...</Text>
-                </View>
-              ) : (
-                <View style={styles.btnContent}>
-                  <Text style={styles.btnText}>Send OTP</Text>
-                  <ArrowRight size={18} color="#fff" style={{ marginLeft: 8 }} />
-                </View>
-              )}
-            </TouchableOpacity>
-          </View>
-          <TouchableOpacity
-            style={styles.outlineBtn}
-            onPress={() => setCurrentStep('method')}
-          >
-            <View style={styles.rowCenter}>
-              <ArrowLeft size={16} color="#111827" style={{ marginRight: 8 }} />
-              <Text style={styles.outlineText}>Back to Login Options</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  };
-
-  const OtpStep = () => {
-    return (
-      <View style={styles.card}>
-        <View style={styles.cardBody}>
-          <View style={styles.headerCenter}>
-            <View style={styles.iconCircleGreen}>
-              <CheckCircle color="#16a34a" size={32} />
-            </View>
-            <Text style={styles.title}>Verify OTP</Text>
-            <Text style={styles.muted}>
-              We've sent a 6-digit code to{'\n'}
-              <Text style={styles.boldLine}>+91 {otpPhone}</Text>
-            </Text>
-          </View>
-          <View>
-            <View style={{ marginBottom: 12 }}>
-              <Text style={styles.label}>Enter OTP</Text>
-              <View style={styles.otpInputContainer}>
-                <OtpCodeInput />
-                <TouchableOpacity
-                  onPress={() => setShowOtp(!showOtp)}
-                  style={styles.otpEyeBtn}
-                >
-                  {showOtp ? (
-                    <EyeOff color="#888" size={20} />
-                  ) : (
-                    <Eye color="#888" size={20} />
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
-            <View style={{ marginBottom: 12 }}>
-              <TouchableOpacity
-                onPress={handleVerifyOtp}
-                disabled={otpCode.length !== 6 || isLoading}
-                style={[
-                  styles.primaryBtn,
-                  (otpCode.length !== 6 || isLoading) && styles.btnDisabled,
-                ]}
-                activeOpacity={0.8}
-              >
-                {isLoading ? (
-                  <View style={styles.btnContent}>
-                    <RefreshCw size={18} color="#fff" style={{ marginRight: 8 }} />
-                    <ActivityIndicator color="#fff" />
-                    <Text style={styles.btnText}>  Verifying...</Text>
-                  </View>
-                ) : (
-                  <View style={styles.btnContent}>
-                    <Text style={styles.btnText}>Verify & Continue</Text>
-                    <ArrowRight size={18} color="#fff" style={{ marginLeft: 8 }} />
-                  </View>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-          <View style={styles.center}>
-            {!canResendOtp ? (
-              <View style={styles.rowCenter}>
-                <Clock size={16} color="#6b7280" />
-                <Text style={styles.resendMuted}>  Resend OTP in {otpTimer}s</Text>
-              </View>
-            ) : (
-              <TouchableOpacity
-                onPress={handleResendOtp}
-                disabled={isLoading}
-                style={styles.ghostBtn}
-                activeOpacity={0.7}
-              >
-                {isLoading ? (
-                  <View style={styles.rowCenter}>
-                    <RefreshCw size={16} color="#1e3a8a" style={{ marginRight: 6 }} />
-                    <Text style={styles.ghostText}>Resending...</Text>
-                  </View>
-                ) : (
-                  <Text style={styles.ghostText}>Resend OTP</Text>
-                )}
-              </TouchableOpacity>
-            )}
-          </View>
-          <TouchableOpacity
-            style={styles.outlineBtn}
-            onPress={() => {
-              setCurrentStep('phone');
-              setOtpCode('');
-              setOtpTimer(30);
-              setCanResendOtp(false);
-            }}
-          >
-            <View style={styles.rowCenter}>
-              <ArrowLeft size={16} color="#111827" style={{ marginRight: 8 }} />
-              <Text style={styles.outlineText}>Change Phone Number</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  };
-
-  const SuccessStep = () => {
-    // Auto-navigate after showing success message
-    useEffect(() => {
-      if (hasNavigated) return; // Prevent multiple navigations
-      
-      const timer = setTimeout(() => {
-        console.log('Auto-navigating to dashboard...');
-        setHasNavigated(true);
-        if (userType === 'wholesale') {
-          navigation.navigate('WholesalerDashboard');
-        } else {
-          navigation.navigate('RetailerDashboard');
-        }
-      }, 2000); // 2 seconds delay
-
-      return () => clearTimeout(timer);
-    }, [userType, hasNavigated]);
-
-    return (
-      <View style={styles.card}>
-        <View style={styles.cardBody}>
-          <View style={styles.headerCenter}>
-            <Animated.View
-              style={[styles.iconCircleGreen, { transform: [{ scale: successPulse }] }]}
-            >
-              <CheckCircle color="#16a34a" size={32} />
-            </Animated.View>
-            <Text style={styles.successTitle}>Login Successful!</Text>
-            <Text style={styles.muted}>
-              {userType === 'retail'
-                ? 'Welcome back to your retailer dashboard'
-                : 'Welcome back to your wholesaler dashboard'}
-            </Text>
-            <Text style={[styles.muted, { marginTop: 8, fontSize: 12 }]}>
-              Redirecting to dashboard...
-            </Text>
-          </View>
-        <View style={styles.successBox}>
-          <View style={styles.rowBetween}>
-            <Text style={styles.kvLabel}>Phone Number</Text>
-            <Text style={styles.badgeSecondary}>
-              +91 {passwordPhone || otpPhone}
-            </Text>
-          </View>
-          <View style={styles.rowBetween}>
-            <Text style={styles.kvLabel}>Status</Text>
-            <Text style={styles.badgeGreen}>Verified</Text>
-          </View>
-        </View>
-        <View style={styles.center}>
-          <View style={styles.rowCenter}>
-            <RefreshCw size={16} color="#6b7280" style={{ marginRight: 6 }} />
-            <Text style={styles.resendMuted}>Redirecting to dashboard...</Text>
-          </View>
-        </View>
-      </View>
-    </View>
-    );
-  };
-
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.select({ ios: 'padding', android: undefined })}
-      >
-        <View style={{ flex: 1 }}>
-          <View style={styles.bgLayer} />
-          <View style={styles.container}>
-            {currentStep === 'method' && <MethodStep />}
-            {currentStep === 'password' && <PasswordStep />}
-            {currentStep === 'phone' && <PhoneStep />}
-            {currentStep === 'otp' && <OtpStep />}
-            {currentStep === 'success' && <SuccessStep />}
+      style={styles.container} 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <View style={styles.header}>
+        <Text style={styles.title}>Welcome Back</Text>
+        <Text style={styles.subtitle}>
+          {userType === 'wholesale' ? 'Wholesaler' : 'Retailer'} Login
+        </Text>
           </View>
-          <View style={styles.blurA} />
-          <View style={styles.blurB} />
-          <View style={styles.blurC} />
-          <View style={styles.blurD} />
+
+      <View style={styles.content}>
+        {currentStep === 'phone' && renderPhoneStep()}
+        {currentStep === 'otp' && renderOtpStep()}
+        {currentStep === 'password' && renderPasswordStep()}
+        {currentStep === 'success' && renderSuccessStep()}
         </View>
       </KeyboardAvoidingView>
-    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  bgLayer: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#fb923c',
-    opacity: 0.25,
-  },
   container: {
     flex: 1,
-    padding: 16,
+    backgroundColor: '#f8fafc',
+  },
+  header: {
+    paddingTop: 60,
+    paddingHorizontal: 24,
+    paddingBottom: 32,
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#1e3a8a',
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#6b7280',
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: 24,
+  },
+  stepContainer: {
+    flex: 1,
     justifyContent: 'center',
-    alignItems: 'center',
   },
-  card: {
-    width: '100%',
-    maxWidth: 400,
-    backgroundColor: 'rgba(255,255,255,0.95)',
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 6,
-    borderWidth: 0,
-  },
-  cardBody: { padding: 20 },
-  headerCenter: { alignItems: 'center' },
-  iconCircleBlue: {
-    width: 64, height: 64, borderRadius: 32,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#dbeafe',
+  stepTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    textAlign: 'center',
     marginBottom: 8,
   },
-  iconCircleGreen: {
-    width: 64, height: 64, borderRadius: 32,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#dcfce7',
-    marginBottom: 8,
+  stepSubtitle: {
+    fontSize: 16,
+    color: '#6b7280',
+    textAlign: 'center',
+    marginBottom: 32,
   },
-  title: { fontSize: 20, fontWeight: '700', color: '#1f2937', marginBottom: 8 },
-  successTitle: { fontSize: 20, fontWeight: '700', color: '#16a34a', marginBottom: 8 },
-  muted: { fontSize: 13, color: '#4b5563', textAlign: 'center', marginBottom: 8 },
-  boldLine: { fontWeight: '600', color: '#1f2937' },
-  label: { fontSize: 13, color: '#374151', fontWeight: '600', marginBottom: 4 },
+  inputContainer: {
+    marginBottom: 24,
+  },
   phoneRow: {
-    marginTop: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    height: 48,
-    borderRadius: 10,
     backgroundColor: '#fff',
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e5e7eb',
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
+    height: 56,
   },
-  prefix: { color: '#6b7280', marginRight: 8 },
-  phoneInput: { flex: 1, fontSize: 16, color: '#111827' },
-  otpInputContainer: {
+  prefix: {
+    fontSize: 16,
+    color: '#6b7280',
+    marginRight: 8,
+    fontWeight: '500',
+  },
+  phoneInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#111827',
+  },
+  otpContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 10,
     backgroundColor: '#fff',
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e5e7eb',
-    marginTop: 8,
-    height: 48,
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
+    height: 56,
   },
-  otpInputField: {
+  otpInput: {
     flex: 1,
     fontSize: 20,
     color: '#111827',
     letterSpacing: 4,
     textAlign: 'center',
-    fontWeight: '600',
-  },
-  otpEyeBtn: { 
-    padding: 4,
-    marginLeft: 8,
   },
   passwordRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 10,
     backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    paddingHorizontal: 12,
-    marginTop: 8,
-    height: 48,
-  },
-  passwordInput: { flex: 1, fontSize: 16, color: '#111827' },
-  eyeBtn: { padding: 4 },
-  primaryBtn: {
-    height: 48,
-    borderRadius: 10,
-    backgroundColor: '#1e3a8a',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 8,
-  },
-  btnDisabled: { opacity: 0.6 },
-  btnContent: { flexDirection: 'row', alignItems: 'center' },
-  btnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  infoBoxOrange: {
-    backgroundColor: '#fff7ed',
-    borderWidth: 1,
-    borderColor: '#fed7aa',
-    padding: 12,
     borderRadius: 12,
-    marginTop: 16,
-  },
-  infoTitle: { fontSize: 13, fontWeight: '600', color: '#1f2937' },
-  infoText: { fontSize: 12, color: '#4b5563' },
-  footerNote: { fontSize: 11, color: '#6b7280', textAlign: 'center', marginTop: 12 },
-  methodBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f3f4f6',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 18,
-    marginVertical: 4,
-    borderWidth: 2,
-    borderColor: '#e5e7eb',
-  },
-  methodIconCircle: {
-    width: 40, height: 40, borderRadius: 20,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#dbeafe',
-    marginRight: 10,
-  },
-  methodTitle: { fontWeight: 'bold', fontSize: 15, color: '#1f2937' },
-  methodDesc: { fontSize: 12, color: '#6b7280' },
-  outlineBtn: {
-    height: 44,
-    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#e5e7eb',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 8,
-  },
-  outlineText: { color: '#111827', fontWeight: '600' },
-  ghostBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: '#eff6ff',
-    marginTop: 8,
-    alignItems: 'center',
-  },
-  ghostText: { color: '#1e3a8a', fontSize: 14, fontWeight: '600' },
-  otpInput: {
-    width: '100%',
+    paddingHorizontal: 16,
     height: 56,
-    borderRadius: 10,
-    backgroundColor: '#ffffff',
+  },
+  passwordInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#111827',
+  },
+  eyeBtn: {
+    padding: 8,
+  },
+  eyeText: {
+    fontSize: 20,
+  },
+  successIconText: {
+    fontSize: 64,
+  },
+  loadingIcon: {
+    fontSize: 16,
+    marginRight: 8,
+  },
+  primaryBtn: {
+    backgroundColor: '#1e3a8a',
+    height: 56,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  primaryBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  disabledBtn: {
+    backgroundColor: '#9ca3af',
+  },
+  secondaryBtn: {
+    height: 56,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: '#e5e7eb',
-    fontSize: 20,
-    color: '#111827',
-    marginTop: 8,
+    backgroundColor: '#fff',
+  },
+  secondaryBtnText: {
+    color: '#1e3a8a',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  resendContainer: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  timerText: {
+    color: '#6b7280',
+    fontSize: 14,
+  },
+  resendText: {
+    color: '#1e3a8a',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  successIcon: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  successTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#16a34a',
+    textAlign: 'center',
     marginBottom: 8,
   },
-  center: { alignItems: 'center' },
-  rowCenter: { flexDirection: 'row', alignItems: 'center' },
-  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  resendMuted: { fontSize: 13, color: '#6b7280' },
-  successBox: {
-    backgroundColor: '#ecfdf5',
-    borderWidth: 1,
-    borderColor: '#bbf7d0',
-    padding: 12,
+  successSubtitle: {
+    fontSize: 16,
+    color: '#6b7280',
+    textAlign: 'center',
+    marginBottom: 32,
+  },
+  successInfo: {
+    backgroundColor: '#fff',
     borderRadius: 12,
-    marginTop: 16,
+    padding: 16,
+    marginBottom: 24,
   },
-  kvLabel: { fontSize: 13, color: '#4b5563' },
-  badgeSecondary: { color: '#111827', fontSize: 12, fontWeight: '600' },
-  badgeGreen: { color: '#065f46', fontSize: 12, fontWeight: '700' },
-  blurA: {
-    position: 'absolute',
-    top: 40,
-    left: 24,
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
   },
-  blurB: {
-    position: 'absolute',
-    bottom: 40,
-    right: 24,
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+  infoLabel: {
+    fontSize: 14,
+    color: '#6b7280',
   },
-  blurC: {
-    position: 'absolute',
-    left: 0,
-    top: '50%',
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+  infoValue: {
+    fontSize: 14,
+    color: '#111827',
+    fontWeight: '500',
   },
-  blurD: {
-    position: 'absolute',
-    right: 40,
-    top: '25%',
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+  statusBadge: {
+    backgroundColor: '#dcfce7',
+    color: '#16a34a',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    color: '#6b7280',
+    fontSize: 14,
+    marginLeft: 8,
   },
 });

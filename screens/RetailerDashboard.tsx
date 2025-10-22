@@ -14,15 +14,16 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LogOut, Home, ShoppingCart, Clock, Truck, Settings, X, Star, Heart, User, CreditCard, Search, Filter, Plus, Bell, Menu } from 'lucide-react-native';
-import { getAuth } from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
+import { getAuth, signOut } from '@react-native-firebase/auth';
+import { getFirestore, collection, query, where, getDocs, orderBy, limit, doc, getDoc, addDoc, deleteDoc, serverTimestamp } from '@react-native-firebase/firestore';
 import ProfessionalHeader from '../components/ui/ProfessionalHeader';
 import AnimatedCard from '../components/ui/AnimatedCard';
 import AnimatedButton from '../components/ui/AnimatedButton';
+import FloatingCart from '../components/ui/FloatingCart';
 import { SkeletonLoader, SkeletonCard, SkeletonList } from '../components/ui/SkeletonLoader';
 import { useNavigation } from '../App';
 
-const db = firestore();
+  const db = getFirestore();
 
 type Screen = 'home' | 'productResults' | 'wholesalerResults' | 'cart' | 'confirmation' | 'payment' | 'tracking';
 
@@ -60,8 +61,9 @@ interface CartItem {
   pricePerUnit: number;
   quantity: number;
   unit: string;
-  status: 'pending' | 'confirmed' | 'rejected';
+  status?: 'pending' | 'confirmed' | 'rejected';
   createdAt: any;
+  totalPrice?: number;
 }
 
 interface Order {
@@ -85,7 +87,7 @@ export default function RetailerDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
   // Dynamic data state
-  const [categories, setCategories] = useState<string[]>(['All Categories']);
+  const [categories, setCategories] = useState<string[]>(['ALL']);
   const [products, setProducts] = useState<Product[]>([]);
   const [wholesalerProducts, setWholesalerProducts] = useState<WholesalerProduct[]>([]);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
@@ -95,7 +97,7 @@ export default function RetailerDashboard() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchInput, setSearchInput] = useState(''); // Separate input state
-  const [selectedCategory, setSelectedCategory] = useState('All Categories');
+  const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [sortByPrice, setSortByPrice] = useState(false);
   const [sortByRating, setSortByRating] = useState(false);
   const [within5km, setWithin5km] = useState(false);
@@ -118,33 +120,57 @@ export default function RetailerDashboard() {
 
   // Fetch retailer profile data
   useEffect(() => {
-    if (!user?.phoneNumber) return;
     const fetchProfile = async () => {
       try {
-        const retailerId = user.phoneNumber?.replace('+91', '');
-        if (!retailerId) return;
-        const userDoc = await db.collection('retailer').doc(retailerId).get();
+        let retailerId;
+        if (user?.phoneNumber) {
+          // User has phone number in auth object
+          retailerId = user.phoneNumber.replace('+91', '');
+        } else if (user?.uid) {
+          // User doesn't have phone number (custom token login), use UID
+          retailerId = user.uid;
+        } else {
+          console.log('No user ID available for profile fetch');
+          return;
+        }
+
+        console.log('Fetching retailer profile for ID:', retailerId);
+        const userDoc = await getDoc(doc(db, 'retailer', retailerId));
+        console.log('Retailer doc exists:', userDoc.exists());
+        
         if (userDoc.exists()) {
           const data = userDoc.data();
-          setRetailerName(data?.storeName || data?.businessOwnerName || '--');
-          setRetailerLocation(data?.location || '--');
+          const name = data?.storeName || data?.businessOwnerName || '--';
+          const location = data?.location || '--';
+          console.log('Retailer profile data:', { name, location });
+          setRetailerName(name);
+          setRetailerLocation(location);
+        } else {
+          console.log('Retailer document not found');
+          setRetailerName('--');
+          setRetailerLocation('--');
         }
       } catch (err) {
-        console.error('Error fetching profile:', err);
+        console.error('Error fetching retailer profile:', err);
+        setRetailerName('--');
+        setRetailerLocation('--');
       }
     };
-    fetchProfile();
+    
+    if (user) {
+      fetchProfile();
+    }
   }, [user]);
 
   // Fetch categories dynamically
   const fetchCategories = useCallback(async () => {
     try {
       console.log('Fetching categories...');
-      const categoriesSnapshot = await db.collection('products').get();
+      const categoriesSnapshot = await getDocs(collection(db, 'products'));
       const uniqueCategories = new Set<string>();
-      uniqueCategories.add('All Categories');
+      uniqueCategories.add('ALL');
       
-      categoriesSnapshot.docs.forEach(doc => {
+      categoriesSnapshot.docs.forEach((doc: any) => {
         const category = doc.data().category;
         if (category) uniqueCategories.add(category);
       });
@@ -163,22 +189,25 @@ export default function RetailerDashboard() {
       console.log('Fetching products...');
       setLoading(true);
       setError(null);
-      let query = db.collection('products');
+      let q = query(collection(db, 'products'));
       
       // Apply category filter
-      if (selectedCategory !== 'All Categories') {
-        query = query.where('category', '==', selectedCategory) as any;
+      if (selectedCategory !== 'ALL') {
+        q = query(q, where('category', '==', selectedCategory));
       }
       
       // Apply search filter - case insensitive partial search
       if (searchQuery.trim()) {
         const searchTerm = searchQuery.trim().toLowerCase();
-        query = query.where('searchName', '>=', searchTerm)
-                    .where('searchName', '<=', searchTerm + '\uf8ff') as any;
+        q = query(q, 
+          where('searchName', '>=', searchTerm),
+          where('searchName', '<=', searchTerm + '\uf8ff')
+        );
       }
       
-      const snapshot = await query.limit(50).get();
-      const productsList: Product[] = snapshot.docs.map(doc => ({
+      q = query(q, limit(50));
+      const snapshot = await getDocs(q);
+      const productsList: Product[] = snapshot.docs.map((doc: any) => ({
         id: doc.id,
         ...doc.data()
       })) as Product[];
@@ -209,14 +238,16 @@ export default function RetailerDashboard() {
     
     try {
       console.log('Fetching wholesaler products for productIds:', productIds);
-      const snapshot = await db.collection('wholesalerProducts')
-        .where('productId', 'in', productIds)
-        .where('available', '==', true)
-        .get();
+      const q = query(
+        collection(db, 'wholesalerProducts'),
+        where('productId', 'in', productIds),
+        where('available', '==', true)
+      );
+      const snapshot = await getDocs(q);
       
       console.log('Wholesaler products snapshot size:', snapshot.docs.length);
       
-      const wholesalerProductsList: WholesalerProduct[] = snapshot.docs.map(doc => ({
+      const wholesalerProductsList: WholesalerProduct[] = snapshot.docs.map((doc: any) => ({
         id: doc.id,
         ...doc.data()
       })) as WholesalerProduct[];
@@ -239,20 +270,32 @@ export default function RetailerDashboard() {
 
   // Fetch cart items
   const fetchCartItems = useCallback(async () => {
-    if (!user?.phoneNumber) return;
+    if (!user) return;
     
     try {
-      const retailerId = user.phoneNumber.replace('+91', '');
-      const snapshot = await db.collection('cart')
-        .where('retailerId', '==', retailerId)
-        .orderBy('createdAt', 'desc')
-        .get();
+      // Get retailer ID from phone number or use UID as fallback
+      let retailerId = user.phoneNumber?.replace('+91', '');
+      if (!retailerId) {
+        retailerId = user.uid;
+      }
       
-      const cartItemsList: CartItem[] = snapshot.docs.map(doc => ({
+      console.log('Fetching cart items for retailerId:', retailerId);
+      
+      const q = query(
+        collection(db, 'cart'),
+        where('retailerId', '==', retailerId),
+        orderBy('createdAt', 'desc')
+      );
+      const snapshot = await getDocs(q);
+      
+      console.log('Cart items found:', snapshot.docs.length);
+      
+      const cartItemsList: CartItem[] = snapshot.docs.map((doc: any) => ({
         id: doc.id,
         ...doc.data()
       })) as CartItem[];
       
+      console.log('Cart items data:', cartItemsList);
       setCartItems(cartItemsList);
     } catch (err) {
       console.error('Error fetching cart items:', err);
@@ -265,13 +308,15 @@ export default function RetailerDashboard() {
     
     try {
       const retailerId = user.phoneNumber.replace('+91', '');
-      const snapshot = await db.collection('orders')
-        .where('retailerId', '==', retailerId)
-        .orderBy('createdAt', 'desc')
-        .limit(20)
-        .get();
+      const q = query(
+        collection(db, 'orders'),
+        where('retailerId', '==', retailerId),
+        orderBy('createdAt', 'desc'),
+        limit(20)
+      );
+      const snapshot = await getDocs(q);
       
-      const ordersList: Order[] = snapshot.docs.map(doc => ({
+      const ordersList: Order[] = snapshot.docs.map((doc: any) => ({
         id: doc.id,
         ...doc.data()
       })) as Order[];
@@ -289,6 +334,27 @@ export default function RetailerDashboard() {
     fetchCartItems();
     fetchOrders();
   }, [fetchCategories, fetchProducts, fetchCartItems, fetchOrders]);
+
+  // Refresh cart when component comes into focus
+  useEffect(() => {
+    const refreshCart = () => {
+      fetchCartItems();
+    };
+
+    // Refresh cart every time the component mounts or when currentScreen changes
+    refreshCart();
+  }, [currentScreen, fetchCartItems]);
+
+  // Periodic cart refresh (every 5 seconds when on dashboard)
+  useEffect(() => {
+    if (currentScreen === 'home' || currentScreen === 'cart') {
+      const interval = setInterval(() => {
+        fetchCartItems();
+      }, 5000); // Refresh every 5 seconds
+
+      return () => clearInterval(interval);
+    }
+  }, [currentScreen, fetchCartItems]);
 
   // Update wholesaler products when products change
   useEffect(() => {
@@ -347,10 +413,10 @@ export default function RetailerDashboard() {
         unit: product.unit,
         status: 'pending' as const,
         retailerId,
-        createdAt: firestore.FieldValue.serverTimestamp(),
+        createdAt: serverTimestamp(),
       };
 
-      await db.collection('cart').add(cartItem);
+      await addDoc(collection(db, 'cart'), cartItem);
       await fetchCartItems(); // Refresh cart
       Alert.alert('Success', 'Item added to cart');
     } catch (err) {
@@ -362,7 +428,7 @@ export default function RetailerDashboard() {
   // Remove from cart function
   const removeFromCart = async (cartItemId: string) => {
     try {
-      await db.collection('cart').doc(cartItemId).delete();
+      await deleteDoc(doc(db, 'cart', cartItemId));
       await fetchCartItems(); // Refresh cart
       Alert.alert('Success', 'Item removed from cart');
     } catch (err) {
@@ -393,17 +459,17 @@ export default function RetailerDashboard() {
           qty: item.quantity,
           pricePerUnit: item.pricePerUnit,
           status: 'requested' as const,
-          createdAt: firestore.FieldValue.serverTimestamp(),
-          updatedAt: firestore.FieldValue.serverTimestamp(),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
         };
-        return db.collection('orders').add(orderData);
+        return addDoc(collection(db, 'orders'), orderData);
       });
 
       await Promise.all(orderPromises);
       
       // Clear cart after creating orders
       const deletePromises = cartItems.map(item => 
-        db.collection('cart').doc(item.id).delete()
+        deleteDoc(doc(db, 'cart', item.id))
       );
       await Promise.all(deletePromises);
       
@@ -422,11 +488,20 @@ export default function RetailerDashboard() {
   const handleLogout = async () => {
     setSidebarOpen(false);
     try {
-      await getAuth().signOut();
-      Alert.alert('Signed Out', 'You have been signed out.');
+      const auth = getAuth();
+      if (auth.currentUser) {
+        await signOut(auth);
+        console.log('Retailer signed out successfully');
+        Alert.alert('Signed Out', 'You have been signed out.');
+      } else {
+        console.log('No user to sign out (already signed out)');
+        Alert.alert('Already Signed Out', 'You are already signed out.');
+      }
       navigation.navigate('Home');
     } catch (err) {
       console.error('Error signing out:', err);
+      Alert.alert('Error', 'Failed to sign out, but redirecting to home.');
+      navigation.navigate('Home');
     }
   };
 
@@ -453,6 +528,38 @@ export default function RetailerDashboard() {
     return minPrice;
   };
 
+  // Helper function to get average rating for a product
+  const getAverageRating = (productId: string) => {
+    const productWholesalers = getProductWholesalers(productId);
+    if (productWholesalers.length === 0) return 0;
+    
+    const ratings = productWholesalers.map(wp => wp.rating || 0).filter(r => r > 0);
+    if (ratings.length === 0) return 0;
+    
+    return ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length;
+  };
+
+  // Get sorted products based on active filters
+  const getSortedProducts = () => {
+    let sortedProducts = [...products];
+    
+    if (sortByPrice) {
+      sortedProducts.sort((a, b) => {
+        const priceA = getBestPrice(a.productId) || Infinity;
+        const priceB = getBestPrice(b.productId) || Infinity;
+        return priceA - priceB;
+      });
+    } else if (sortByRating) {
+      sortedProducts.sort((a, b) => {
+        const ratingA = getAverageRating(a.productId);
+        const ratingB = getAverageRating(b.productId);
+        return ratingB - ratingA; // Higher rating first
+      });
+    }
+    
+    return sortedProducts.slice(0, 10);
+  };
+
   // Helper function to create sample wholesaler product data (for development/testing)
   const createSampleWholesalerData = async (productId: string) => {
     try {
@@ -468,10 +575,10 @@ export default function RetailerDashboard() {
         ],
         available: true,
         unit: 'BOX',
-        createdAt: firestore.FieldValue.serverTimestamp(),
+        createdAt: serverTimestamp(),
       };
 
-      await db.collection('wholesalerProducts').add(sampleData);
+      await addDoc(collection(db, 'wholesalerProducts'), sampleData);
       console.log('Sample wholesaler data created for product:', productId);
       
       // Refresh the data
@@ -527,48 +634,32 @@ export default function RetailerDashboard() {
       <AnimatedCard animationType="fadeInUp" delay={200} style={styles.searchCard}>
         <View style={styles.searchSection}>
           <Text style={styles.searchTitle}>Find Products</Text>
-          <View style={styles.searchContainer}>
-            <View style={styles.searchInputContainer}>
-              <Search color="#6b7280" size={20} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search products (e.g., rice, apple, milk)..."
-                value={searchInput}
-                onChangeText={setSearchInput}
-                onSubmitEditing={() => {
-                  setSearchQuery(searchInput);
-                  fetchProducts();
-                }}
-                autoCorrect={false}
-                autoCapitalize="none"
-              />
-            </View>
-            <AnimatedButton
-              title="Search"
-              size="medium"
-              onPress={fetchProducts}
-              style={styles.searchBtn}
-            />
-            <AnimatedButton
-              title="Browse All"
-              size="medium"
-              variant="secondary"
-              onPress={() => navigation.navigate('SearchProducts', { 
+          <TouchableOpacity 
+            style={styles.searchContainer}
+            onPress={() => {
+              console.log('Search field clicked, navigating to SearchProducts');
+              navigation.navigate('SearchProducts', { 
                 initialQuery: searchInput,
                 category: selectedCategory 
-              })}
-              style={styles.searchBtn}
-            />
-          </View>
+              });
+            }}
+          >
+            <View style={styles.searchInputContainer}>
+              <Search color="#6b7280" size={20} />
+              <Text style={styles.searchPlaceholder}>
+                Search products (e.g., rice, apple, milk)...
+              </Text>
+            </View>
+          </TouchableOpacity>
         </View>
       </AnimatedCard>
 
       {/* Categories */}
       <Text style={styles.sectionTitle}>Categories</Text>
       <View style={styles.categoryRow}>
-        {categories.slice(1, 9).map((cat) => (
+        {categories.slice(1, 9).map((cat, index) => (
           <TouchableOpacity 
-            key={cat} 
+            key={`${cat}-${index}`} 
             style={[styles.categoryBtn, selectedCategory === cat && styles.categoryBtnActive]}
             onPress={() => {
               setSelectedCategory(cat);
@@ -586,13 +677,27 @@ export default function RetailerDashboard() {
       <View style={styles.filtersContainer}>
         <TouchableOpacity 
           style={[styles.filterBtn, sortByPrice && styles.filterBtnActive]}
-          onPress={() => setSortByPrice(!sortByPrice)}
+          onPress={() => {
+            if (sortByPrice) {
+              setSortByPrice(false);
+            } else {
+              setSortByPrice(true);
+              setSortByRating(false);
+            }
+          }}
         >
           <Text style={[styles.filterText, sortByPrice && styles.filterTextActive]}>Lowest Price</Text>
         </TouchableOpacity>
         <TouchableOpacity 
           style={[styles.filterBtn, sortByRating && styles.filterBtnActive]}
-          onPress={() => setSortByRating(!sortByRating)}
+          onPress={() => {
+            if (sortByRating) {
+              setSortByRating(false);
+            } else {
+              setSortByRating(true);
+              setSortByPrice(false);
+            }
+          }}
         >
           <Text style={[styles.filterText, sortByRating && styles.filterTextActive]}>Top Rated</Text>
         </TouchableOpacity>
@@ -612,7 +717,7 @@ export default function RetailerDashboard() {
         </View>
       ) : (
         <FlatList
-          data={products.slice(0, 10)}
+          data={getSortedProducts()}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => {
             const productWholesalers = getProductWholesalers(item.productId);
@@ -621,10 +726,13 @@ export default function RetailerDashboard() {
             return (
               <TouchableOpacity 
                 style={styles.productCard}
-                onPress={() => navigation.navigate('ProductDetails', { 
-                  productId: item.productId, 
-                  name: item.name 
-                })}
+                onPress={() => {
+                  console.log('Product card clicked, navigating to ProductWholesalers for product:', item.name);
+                  navigation.navigate('ProductWholesalers', { 
+                    productId: item.productId, 
+                    productName: item.name 
+                  });
+                }}
               >
                 <Text style={styles.productImage}>{item.image || '📦'}</Text>
                 <Text style={styles.productName}>{item.name}</Text>
@@ -641,26 +749,6 @@ export default function RetailerDashboard() {
                     : 'No wholesalers yet'
                   }
                 </Text>
-                {productWholesalers.length > 0 ? (
-                  <TouchableOpacity 
-                    style={styles.addCartBtn}
-                    onPress={() => {
-                      const bestWholesaler = productWholesalers.reduce((best, current) => 
-                        current.pricePerUnit < best.pricePerUnit ? current : best
-                      );
-                      addToCart(item.productId, bestWholesaler.wholesalerId, bestWholesaler.pricePerUnit);
-                    }}
-                  >
-                    <Text style={styles.addCartText}>Quick Add</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity 
-                    style={[styles.addCartBtn, { backgroundColor: '#6b7280' }]}
-                    onPress={() => createSampleWholesalerData(item.productId)}
-                  >
-                    <Text style={styles.addCartText}>Add Sample Data</Text>
-                  </TouchableOpacity>
-                )}
               </TouchableOpacity>
             );
           }}
@@ -696,9 +784,12 @@ export default function RetailerDashboard() {
               <View style={styles.cartStatusContainer}>
                 <View style={[styles.statusDot, { backgroundColor: 
                   item.status === 'confirmed' ? '#16a34a' : 
-                  item.status === 'pending' ? '#fbbf24' : '#dc2626'
+                  item.status === 'pending' ? '#fbbf24' : 
+                  item.status === 'rejected' ? '#dc2626' : '#fbbf24'
                 }]} />
-                <Text style={styles.cartStatus}>{item.status.charAt(0).toUpperCase() + item.status.slice(1)}</Text>
+                <Text style={styles.cartStatus}>
+                  {item.status ? item.status.charAt(0).toUpperCase() + item.status.slice(1) : 'Pending'}
+                </Text>
               </View>
             </View>
           ))}
@@ -798,7 +889,10 @@ export default function RetailerDashboard() {
       />
 
       {/* Main Content */}
-      <View style={{ flex: 1 }}>
+      <View style={{ 
+        flex: 1, 
+        paddingBottom: cartItems.length > 0 && currentScreen !== 'cart' ? 100 : 0 
+      }}>
         {currentScreen === 'home' && renderHomeScreen()}
         {currentScreen === 'cart' && renderCartScreen()}
         {currentScreen === 'tracking' && renderTrackingScreen()}
@@ -837,6 +931,17 @@ export default function RetailerDashboard() {
               <Text style={styles.sidebarProfileName}>{retailerName}</Text>
               <Text style={styles.sidebarProfileLocation}>{retailerLocation}</Text>
             </View>
+            <TouchableOpacity 
+              style={styles.sidebarBtn} 
+              onPress={() => {
+                console.log('View Profile clicked, navigating to RetailerProfile');
+                setSidebarOpen(false);
+                navigation.navigate('RetailerProfile');
+              }}
+            >
+              <User color="#1e3a8a" size={20} />
+              <Text style={styles.sidebarBtnText}>View Profile</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.sidebarBtn} onPress={handleLogout}>
               <LogOut color="#D14343" size={20} />
               <Text style={styles.sidebarBtnText}>Sign Out</Text>
@@ -844,6 +949,14 @@ export default function RetailerDashboard() {
           </View>
         </View>
       </Modal>
+
+      {/* Floating Cart */}
+      <FloatingCart
+        itemCount={cartItems.length}
+        totalPrice={cartItems.reduce((sum, item) => sum + (item.totalPrice || (item.pricePerUnit * item.quantity)), 0)}
+        onPress={() => navigateToScreen('cart')}
+        visible={cartItems.length > 0 && currentScreen !== 'cart'}
+      />
       </View>
     </SafeAreaView>
   );
@@ -1119,6 +1232,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     fontSize: 16,
     color: '#1f2937',
+  },
+  searchPlaceholder: {
+    flex: 1,
+    paddingHorizontal: 12,
+    fontSize: 16,
+    color: '#9ca3af',
   },
   searchBtn: {
     backgroundColor: '#1e3a8a',
